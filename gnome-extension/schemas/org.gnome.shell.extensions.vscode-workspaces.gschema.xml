@@ -2,10 +2,11 @@
 <schemalist>
     <schema id="org.gnome.shell.extensions.vscode-workspaces"
         path="/org/gnome/shell/extensions/vscode-workspaces/">
-        <key name="vscode-location" type="s">
-            <default>'code'</default>
-            <summary>VSCode Location</summary>
-            <description>Path to your VSCode Binary</description>
+        <key name="editor-location" type="s">
+            <default>'auto'</default>
+            <summary>Editor Location</summary>
+            <description>Path to your editor binary (code, codium, code-insiders) or 'auto' for
+                automatic detection</description>
         </key>
         <key name="new-window" type="b">
             <default>false</default>
@@ -15,7 +16,8 @@
         <key name="prefer-workspace-file" type="b">
             <default>false</default>
             <summary>Prefer Workspace File</summary>
-            <description>Whether to prefer the workspace file over the workspace directory if a  workspace file is present</description>
+            <description>Whether to prefer the workspace file over the workspace directory if a
+                workspace file is present</description>
         </key>
         <key name="debug" type="b">
             <default>false</default>

@@ -9,3 +9,5 @@ import '@girs/gnome-shell/st';
 import '@girs/gnome-shell/ui/main';
 import '@girs/gnome-shell/ui/panelMenu';
 import '@girs/gnome-shell/ui/popupMenu';
+//import '@girs/gtk-4.0';
+//import '@girs/gdk-4.0';
