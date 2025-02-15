@@ -18,24 +18,24 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         // Group for New Window setting
         const newWindowGroup = new Adw.PreferencesGroup({
             title: _('New Window'),
-            description: _('Configure whether to open VSCode in a new window'),
+            description: _('Configure whether to open editor in a new window'),
         });
         page.add(newWindowGroup);
 
         const newWindowSwitch = new Adw.SwitchRow({
             title: _('Open in New Window'),
-            subtitle: _('Whether to open VSCode in a new window'),
+            subtitle: _('Whether to open editor in a new window'),
         });
         newWindowGroup.add(newWindowSwitch);
 
-        // Group for VSCode Location
-        const vscodeGroup = new Adw.PreferencesGroup({
-            title: _('VSCode Settings'),
-            description: _('Configure various settings for interacting with VSCode'),
+        // Group for editor Location
+        const editorGroup = new Adw.PreferencesGroup({
+            title: _('editor Settings'),
+            description: _('Configure various settings for interacting with editor'),
         });
 
-        const vscodeLocation = new Adw.EntryRow({
-            title: _('VSCode Location'),
+        const editorLocation = new Adw.EntryRow({
+            title: _('editor Location'),
             showApplyButton: true,
             inputPurpose: Gtk.InputPurpose.TERMINAL,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
@@ -51,10 +51,10 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             subtitle: _('Whether to prefer the workspace file over the workspace directory if a workspace file is present'),
         });
 
-        vscodeGroup.add(vscodeLocation);
-        vscodeGroup.add(preferWorkspaceFile);
-        vscodeGroup.add(debug);
-        page.add(vscodeGroup);
+        editorGroup.add(editorLocation);
+        editorGroup.add(preferWorkspaceFile);
+        editorGroup.add(debug);
+        page.add(editorGroup);
 
         // Group for Refresh Interval setting
         const refreshIntervalGroup = new Adw.PreferencesGroup({
@@ -80,8 +80,8 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             Gio.SettingsBindFlags.DEFAULT
         );
         _settings.bind(
-            'vscode-location',
-            vscodeLocation,
+            'editor-location',
+            editorLocation,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
