@@ -358,24 +358,17 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
         // Create the PopupMenu for the ComboBox items
         Array.from(this._recentWorkspaces).forEach(workspace => {
-            // Create a menu item without default text
             const item = new PopupMenu.PopupMenuItem('');
             item.actor.add_style_class_name('custom-menu-item');
-            // Create a label that shows the short name by default
             const label = new St.Label({ text: this._get_name(workspace) });
-            // Insert the label at the beginning
             item.actor.insert_child_at_index(label, 0);
 
-            // Replace tooltip handling to use a closure variable instead of attaching property to item.actor
             let tooltip: St.Widget | null = null;
             item.actor.connect('enter-event', () => {
                 tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
                 const [x, y] = item.actor.get_transformed_position();
-                // Position tooltip on the left side using a fixed offset (adjust as needed)
-                //tooltip.set_position(x - 150, y);
                 const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
                 tooltip.set_position(x - natWidth - 1, y);
-
                 Main.layoutManager.addChrome(tooltip);
             });
             item.actor.connect('leave-event', () => {
@@ -401,7 +394,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
             trashButton.connect('enter-event', () => {
                 trashIcon.add_style_class_name('trash-icon-hover');
             });
-
             trashButton.connect('leave-event', () => {
                 trashIcon.remove_style_class_name('trash-icon-hover');
             });
@@ -420,8 +412,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             comboBoxMenu.addMenuItem(item);
         });
 
-        // Default open the Recent Workspaces submenu
-        comboBoxMenu.open(true);
+        comboBoxSubMenu.menu.open(true);
 
         const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
             reactive: true,
