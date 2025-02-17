@@ -70,7 +70,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             workspacePath: GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']),
         },
     ];
-    private readonly _iconNames = ['vscode', 'code', 'vscodium', 'codium', 'code-insiders'];
+    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders'];
     private readonly FILE_URI_PREFIX: string = FILE_URI_PREFIX;
 
     enable() {
