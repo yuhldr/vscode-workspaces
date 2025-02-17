@@ -72,6 +72,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
     ];
     private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders'];
     private readonly FILE_URI_PREFIX: string = FILE_URI_PREFIX;
+    private _menuUpdating: boolean = false;
 
     enable() {
         this.gsettings = this.getSettings();
@@ -214,57 +215,169 @@ export default class VSCodeWorkspacesExtension extends Extension {
     _createMenu() {
         if (!this._indicator) return;
 
-        (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
+        // If a menu update is in progress, skip this invocation
+        if (this._menuUpdating) {
+            this._log('Menu update skipped due to concurrent update');
+            return;
+        }
+        this._menuUpdating = true;
 
-        // Add editor selector if multiple editors are found
-        if (this._foundEditors.length > 1) {
-            const editorSelector = new PopupMenu.PopupSubMenuMenuItem('Select Editor');
+        try {
+            // Update recent workspaces before building menu
+            this._getRecentWorkspaces();
 
-            this._foundEditors.forEach(editor => {
-                const item = new PopupMenu.PopupMenuItem(editor.name);
-                const isActive = this._activeEditor?.binary === editor.binary;
+            // Check that menu has isOpen() available before calling it
+            if (this._indicator.menu instanceof PopupMenu.PopupMenu && this._indicator.menu.isOpen) {
+                this._indicator.menu.close(true);
+            }
 
-                if (isActive) {
-                    item.setOrnament(PopupMenu.Ornament.DOT);
-                }
+            (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
-                item.connect('activate', () => {
-                    this._editorLocation = editor.binary;
-                    this.gsettings?.set_string('editor-location', editor.binary);
-                    this._setActiveEditor();
-                    this._createMenu();
+            // Add editor selector if multiple editors are found
+            if (this._foundEditors.length > 1) {
+                const editorSelector = new PopupMenu.PopupSubMenuMenuItem('Select Editor');
+
+                this._foundEditors.forEach(editor => {
+                    const item = new PopupMenu.PopupMenuItem(editor.name);
+                    const isActive = this._activeEditor?.binary === editor.binary;
+
+                    if (isActive) {
+                        item.setOrnament(PopupMenu.Ornament.DOT);
+                    }
+
+                    item.connect('activate', () => {
+                        this._editorLocation = editor.binary;
+                        this.gsettings?.set_string('editor-location', editor.binary);
+                        this._setActiveEditor();
+                        this._createMenu();
+                    });
+
+                    editorSelector.menu.addMenuItem(item);
                 });
 
-                editorSelector.menu.addMenuItem(item);
+                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
+                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            }
+
+            // Recent Workspaces should be default open
+            const comboBoxButton: St.Button = new St.Button({
+                label: 'Workspaces',
+                style_class: 'workspace-combo-button',
+                reactive: true,
+                can_focus: true,
+                track_hover: true,
             });
 
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            const comboBoxSubMenu = new PopupMenu.PopupSubMenuMenuItem('Recent Workspaces');
+            const comboBoxMenu = comboBoxSubMenu.menu;
+
+            comboBoxButton.connect('clicked', (_button: St.Button) => {
+                comboBoxMenu.toggle();
+            });
+
+            // Create the PopupMenu for the ComboBox items
+            Array.from(this._recentWorkspaces).forEach(workspace => {
+                // Create a menu item without default text
+                const item = new PopupMenu.PopupMenuItem('');
+                item.actor.add_style_class_name('custom-menu-item');
+                // Create a label that shows the short name by default
+                const label = new St.Label({ text: this._get_name(workspace) });
+                // Insert the label at the beginning
+                item.actor.insert_child_at_index(label, 0);
+
+                let tooltip: St.Widget | null = null;
+                item.actor.connect('enter-event', () => {
+                    tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
+                    const [x, y] = item.actor.get_transformed_position();
+                    Main.layoutManager.addChrome(tooltip);
+                    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                        if (!tooltip) {
+                            return GLib.SOURCE_REMOVE;
+                        }
+
+                        const natWidth = tooltip.allocation.get_width();
+                        tooltip.set_position(x - natWidth - 1, y);
+                        return GLib.SOURCE_REMOVE;
+                    });
+                });
+                item.actor.connect('leave-event', () => {
+                    if (tooltip) {
+                        Main.layoutManager.removeChrome(tooltip);
+                        tooltip = null;
+                    }
+                });
+
+                const trashIcon = new St.Icon({
+                    icon_name: 'user-trash-symbolic',
+                    style_class: 'trash-icon',
+                });
+
+                const trashButton = new St.Button({
+                    child: trashIcon,
+                    style_class: 'trash-button',
+                    reactive: true,
+                    can_focus: true,
+                    track_hover: true,
+                });
+
+                trashButton.connect('enter-event', () => {
+                    trashIcon.add_style_class_name('trash-icon-hover');
+                });
+
+                trashButton.connect('leave-event', () => {
+                    trashIcon.remove_style_class_name('trash-icon-hover');
+                });
+
+                trashButton.connect('clicked', () => {
+                    workspace.softRemove();
+                });
+
+                item.add_child(trashButton);
+
+                item.connect('activate', () => {
+                    comboBoxButton.label = workspace.name;
+                    this._openWorkspace(workspace.path);
+                });
+
+                comboBoxMenu.addMenuItem(item);
+            });
+
+            // Force the Recent Workspaces submenu to be open by default
+            comboBoxSubMenu.menu.open(true);
+
+            const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
+                reactive: false,
+            });
+            comboBoxMenuItem.actor.add_child(comboBoxButton);
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
+
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxSubMenu);
+
+            // Add Settings and Quit items
+            const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
+            const itemClearWorkspaces = new PopupMenu.PopupMenuItem('Clear Workspaces');
+            itemClearWorkspaces.connect('activate', () => {
+                this._clearRecentWorkspaces();
+            });
+
+            const itemRefresh = new PopupMenu.PopupMenuItem('Refresh');
+            itemRefresh.connect('activate', () => {
+                this._createMenu();
+            });
+
+            itemSettings.menu.addMenuItem(itemClearWorkspaces);
+            itemSettings.menu.addMenuItem(itemRefresh);
+
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
+
+            const itemQuit = new PopupMenu.PopupMenuItem('Quit');
+            itemQuit.connect('activate', () => {
+                this._quit();
+            });
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemQuit);
+        } finally {
+            this._menuUpdating = false;
         }
-
-        this._loadRecentWorkspaces();
-
-        const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
-        const itemClearWorkspaces = new PopupMenu.PopupMenuItem('Clear Workspaces');
-        itemClearWorkspaces.connect('activate', () => {
-            this._clearRecentWorkspaces();
-        });
-
-        const itemRefresh = new PopupMenu.PopupMenuItem('Refresh');
-        itemRefresh.connect('activate', () => {
-            this._createMenu();
-        });
-
-        itemSettings.menu.addMenuItem(itemClearWorkspaces);
-        itemSettings.menu.addMenuItem(itemRefresh);
-
-        (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
-
-        const itemQuit = new PopupMenu.PopupMenuItem('Quit');
-        itemQuit.connect('activate', () => {
-            this._quit();
-        });
-        (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemQuit);
     }
 
     _get_name(workspace: RecentWorkspace) {
@@ -339,25 +452,23 @@ export default class VSCodeWorkspacesExtension extends Extension {
         Array.from(this._recentWorkspaces).forEach(workspace => {
             // Create a menu item without default text
             const item = new PopupMenu.PopupMenuItem('');
-            // Add custom style class to ensure our CSS is applied
             item.actor.add_style_class_name('custom-menu-item');
             // Create a label that shows the short name by default
             const label = new St.Label({ text: this._get_name(workspace) });
             // Insert the label at the beginning
             item.actor.insert_child_at_index(label, 0);
 
+            // Replace tooltip handling to use a closure variable instead of attaching property to item.actor
             let tooltip: St.Widget | null = null;
             item.actor.connect('enter-event', () => {
                 tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
                 const [x, y] = item.actor.get_transformed_position();
+                // Position tooltip on the left side using a fixed offset (adjust as needed)
+                //tooltip.set_position(x - 150, y);
+                const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
+                tooltip.set_position(x - natWidth - 1, y);
+
                 Main.layoutManager.addChrome(tooltip);
-                // Use idle_add to wait for the tooltip to be allocated
-                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                    if (!tooltip) return GLib.SOURCE_REMOVE;
-                    const natWidth = tooltip.allocation.get_width();
-                    tooltip.set_position(x - natWidth - 10, y);
-                    return GLib.SOURCE_REMOVE;
-                });
             });
             item.actor.connect('leave-event', () => {
                 if (tooltip) {

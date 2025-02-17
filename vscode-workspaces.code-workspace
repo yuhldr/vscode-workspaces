@@ -1,0 +1,11 @@
+{
+    "folders": [
+        {
+            "name": "gnome-extension",
+            "path": "./gnome-extension"
+        }
+    ],
+    "settings": {
+        "makefile.configureOnOpen": false
+    }
+}
