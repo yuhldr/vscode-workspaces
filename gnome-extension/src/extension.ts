@@ -231,6 +231,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 reactive: true,
             });
 
+            this._createRecentWorkspacesMenu();
+
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
@@ -752,7 +754,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     _refresh() {
         this._getRecentWorkspaces();
-        this._createRecentWorkspacesMenu();
         this._createMenu();
     }
 
