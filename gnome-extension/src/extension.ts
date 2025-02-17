@@ -40,7 +40,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _indicator?: PanelMenu.Button;
     private _refreshInterval: number = 300;
-    private _refreshTimeout: any = null;
+    private _refreshTimeout: number | null = null;
     private _newWindow: boolean = false;
     private _editorLocation: string = '';
     private _preferCodeWorkspaceFile: boolean = false;
@@ -258,11 +258,50 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     _get_name(workspace: RecentWorkspace) {
+        // Convert the workspace path from a URI to a native file path.
+        let nativePath = decodeURIComponent(workspace.path).replace('file://', '');
+        let name = GLib.path_get_basename(nativePath);
+
+        try {
+            const file = Gio.File.new_for_path(nativePath);
+
+            // If nativePath is a directory, try to find a .code-workspace file in it.
+            if (file.query_file_type(Gio.FileQueryInfoFlags.NONE, null) === Gio.FileType.DIRECTORY) {
+                const enumerator = file.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+                let info: Gio.FileInfo | null;
+                while ((info = enumerator.next_file(null)) !== null) {
+                    const childName = info.get_name();
+                    if (childName.endsWith('.code-workspace')) {
+                        // Use the name of the .code-workspace file without its extension.
+                        name = childName.replace('.code-workspace', '');
+                        break;
+                    }
+                }
+                enumerator.close(null);
+            } else {
+                // If it's not a directory and already a workspace file, remove the extension if present.
+                if (name.endsWith('.code-workspace')) {
+                    name = name.replace('.code-workspace', '');
+                }
+            }
+        } catch (error) {
+            // In case of error, fallback to the base name.
+            logError(error as object, 'Error getting workspace name');
+        }
+
+        // Replace the home directory path with '~'.
+        name = name.replace(GLib.get_home_dir(), '~');
+        return name;
+    }
+
+    // Add a new helper method to get full workspace path without shortening
+    _get_full_path(workspace: RecentWorkspace) {
         let path = decodeURIComponent(workspace.path);
         path = path.replace(`file://`, '').replace(GLib.get_home_dir(), '~');
         return path;
     }
 
+    // Modify _loadRecentWorkspaces to show full path on hover, and short name by default
     _loadRecentWorkspaces() {
         this._getRecentWorkspaces();
 
@@ -271,9 +310,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
             return;
         }
 
-        // Create a combo_box-like button for the recent workspaces
         const comboBoxButton: St.Button = new St.Button({
-            label: 'VSCode Workspaces',
+            label: 'Workspaces',
             style_class: 'workspace-combo-button',
             reactive: true,
             can_focus: true,
@@ -288,9 +326,21 @@ export default class VSCodeWorkspacesExtension extends Extension {
         });
 
         // Create the PopupMenu for the ComboBox items
+        Array.from(this._recentWorkspaces).forEach(workspace => {
+            // Create a menu item without default text
+            const item = new PopupMenu.PopupMenuItem('');
+            // Create a label that shows the short name by default
+            const label = new St.Label({ text: this._get_name(workspace) });
+            // Insert the label at the beginning
+            item.actor.insert_child_at_index(label, 0);
 
-        this._recentWorkspaces?.forEach(workspace => {
-            const item = new PopupMenu.PopupMenuItem(this._get_name(workspace));
+            // On hover, update the label to show full path, and revert on leave
+            item.actor.connect('enter-event', () => {
+                label.set_text(this._get_full_path(workspace));
+            });
+            item.actor.connect('leave-event', () => {
+                label.set_text(this._get_name(workspace));
+            });
 
             const trashIcon = new St.Icon({
                 icon_name: 'user-trash-symbolic',
@@ -323,128 +373,110 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 comboBoxButton.label = workspace.name;
                 this._openWorkspace(workspace.path);
             });
+
             comboBoxMenu.addMenuItem(item);
         });
 
-        // Add the ComboBox button to the menu
+        // Default open the Recent Workspaces submenu
+        comboBoxMenu.open(true);
+
         const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
             reactive: false,
         });
         comboBoxMenuItem.actor.add_child(comboBoxButton);
         (this._indicator?.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
 
-        // Add the ComboBox submenu to the menu
         (this._indicator?.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxSubMenu);
     }
 
     _iterateWorkspaceDir(dir: Gio.File, callback: (workspace: Workspace) => void) {
         try {
-            // compare the file path with the child paths in the recent workspaces directory
             const enumerator = dir.enumerate_children(
                 'standard::*,unix::uid',
                 Gio.FileQueryInfoFlags.NONE,
                 null
             );
+            try {
+                let info: Gio.FileInfo | null;
+                while ((info = enumerator.next_file(null)) !== null) {
+                    try {
+                        const workspaceStoreDir = enumerator.get_child(info);
 
-            let info: Gio.FileInfo | null;
+                        this._log(`Checking ${workspaceStoreDir.get_path()}`);
 
-            while ((info = enumerator.next_file(null)) !== null) {
-                try {
-                    const workspaceStoreDir = enumerator.get_child(info);
-
-                    this._log(`Checking ${workspaceStoreDir.get_path()}`);
-
-                    const workspaceFile = Gio.File.new_for_path(
-                        GLib.build_filenamev([workspaceStoreDir.get_path()!, 'workspace.json'])
-                    );
-
-                    if (!workspaceFile.query_exists(null)) {
-                        this._log(`No workspace.json found in ${workspaceStoreDir.get_path()}`);
-                        continue;
-                    }
-
-                    // load the contents of the workspace.json file and parse it
-                    const [, contents] = workspaceFile.load_contents(null);
-
-                    const decoder = new TextDecoder();
-
-                    const json = JSON.parse(decoder.decode(contents));
-
-                    // Check if the json file has a `folder` property or a `workspace` property - check if the previous item in `workspaceFiles` is the same as the current item
-                    // we want to grab the contents either folder or workspace property and check if it's the same as the previous item in `workspaceFiles`
-                    // if it is, we want to skip this item
-                    // if it isn't, we want to add it to `workspaceFiles`
-
-                    const workspaceURI = (json.folder || json.workspace) as string | undefined;
-                    if (!workspaceURI) {
-                        this._log('No folder or workspace property found in workspace.json');
-                        continue;
-                    }
-
-                    this._log(
-                        `Found workspace.json in ${workspaceStoreDir.get_path()} with ${workspaceURI}`
-                    );
-
-                    const newWorkspace = {
-                        uri: workspaceURI,
-                        storeDir: workspaceStoreDir,
-                    };
-
-                    const pathToWorkspace = Gio.File.new_for_uri(newWorkspace.uri);
-
-                    // check if the file exists and remove it from the list if it doesn't
-                    if (!pathToWorkspace.query_exists(null)) {
-                        this._log(
-                            `Workspace does not exist and will be removed from the list: ${pathToWorkspace.get_path()}`
+                        const workspaceFile = Gio.File.new_for_path(
+                            GLib.build_filenamev([workspaceStoreDir.get_path()!, 'workspace.json'])
                         );
-                        const deleteRes = this._workspaces.delete(newWorkspace);
-                        if (!deleteRes) {
-                            this._log(`Failed to remove workspace: ${newWorkspace.uri} from cache - not in cache or cache is empty`);
+
+                        if (!workspaceFile.query_exists(null)) {
+                            this._log(`No workspace.json found in ${workspaceStoreDir.get_path()}`);
+                            continue;
                         }
 
-                        // Try to delete the workspace directory itself
-                        // now remove the workspaceStore directory
-                        const trashRes = newWorkspace.storeDir.trash(null);
-                        const workspaceName = GLib.path_get_basename(newWorkspace.uri);
+                        const [, contents] = workspaceFile.load_contents(null);
+                        const decoder = new TextDecoder();
+                        const json = JSON.parse(decoder.decode(contents));
 
-                        if (!trashRes) {
-                            this._log(`Failed to move ${workspaceName} to trash`);
-                            return;
+                        const workspaceURI = (json.folder || json.workspace) as string | undefined;
+                        if (!workspaceURI) {
+                            this._log('No folder or workspace property found in workspace.json');
+                            continue;
                         }
 
-                        this._log(`Workspace Trashed: ${workspaceName}`);
+                        this._log(`Found workspace.json in ${workspaceStoreDir.get_path()} with ${workspaceURI}`);
 
+                        const newWorkspace = {
+                            uri: workspaceURI,
+                            storeDir: workspaceStoreDir,
+                        };
+
+                        const pathToWorkspace = Gio.File.new_for_uri(newWorkspace.uri);
+
+                        if (!pathToWorkspace.query_exists(null)) {
+                            this._log(
+                                `Workspace does not exist and will be removed from the list: ${pathToWorkspace.get_path()}`
+                            );
+                            this._workspaces.delete(newWorkspace);
+
+                            const trashRes = newWorkspace.storeDir.trash(null);
+                            const workspaceName = GLib.path_get_basename(newWorkspace.uri);
+
+                            if (!trashRes) {
+                                this._log(`Failed to move ${workspaceName} to trash`);
+                                return;
+                            }
+
+                            this._log(`Workspace Trashed: ${workspaceName}`);
+                            continue;
+                        }
+
+                        callback(newWorkspace);
+
+                        const workspaceExists = Array.from(this._workspaces).some(workspace => {
+                            return workspace.uri === workspaceURI;
+                        });
+
+                        if (workspaceExists) {
+                            this._log(`Workspace already exists in recent workspaces: ${workspaceURI}`);
+                            continue;
+                        }
+
+                        if (this._workspaces.has(newWorkspace)) {
+                            this._log(`Workspace already exists: ${newWorkspace}`);
+                            continue;
+                        }
+
+                        this._workspaces.add(newWorkspace);
+                    } catch (error) {
+                        logError(error as object, 'Failed to parse workspace.json');
                         continue;
                     }
-
-                    callback(newWorkspace);
-                    // Check if a workspace with the same uri exists
-                    const workspaceExists = Array.from(this._workspaces).some(workspace => {
-                        return workspace.uri === workspaceURI;
-                    });
-
-                    if (workspaceExists) {
-                        this._log(`Workspace already exists in recent workspaces: ${workspaceURI}`);
-                        continue;
-                    }
-
-                    // use a cache to avoid reprocessing the same directory/file
-                    if (this._workspaces.has(newWorkspace)) {
-                        this._log(`Workspace already exists: ${newWorkspace}`);
-                        continue;
-                    }
-
-                    this._workspaces.add(newWorkspace);
-                } catch (error) {
-                    logError(error as object, 'Failed to parse workspace.json');
-                    continue;
                 }
-            }
-
-            const enumCloseRes = enumerator.close(null);
-
-            if (!enumCloseRes) {
-                throw new Error('Failed to close enumerator');
+            } finally {
+                const enumCloseRes = enumerator.close(null);
+                if (!enumCloseRes) {
+                    throw new Error('Failed to close enumerator');
+                }
             }
         } catch (error) {
             logError(error as object, 'Failed to iterate workspace directory');
@@ -634,39 +666,42 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     _launchVSCode(files: string[]): void {
-        // TODO: Support custom cmd args
-        // TODO: Support remote files and folders
-        // code --folder-uri vscode-remote://ssh-remote+user@host/path/to/folder
-
         this._log(`Launching VSCode with files: ${files.join(', ')}`);
-
         try {
-            let safePaths = '';
-            let args = '';
-            let isDir = false;
+            const filePaths: string[] = [];
+            const dirPaths: string[] = [];
 
             files.forEach(file => {
-                safePaths += `"${file}" `;
-                this._log(`File Path: ${file}`);
-
                 if (GLib.file_test(file, GLib.FileTest.IS_DIR)) {
                     this._log(`Found a directory: ${file}`);
-                    args = '--folder-uri';
-                    isDir = true;
+                    dirPaths.push(file);
                 } else {
                     this._log(`Found a file: ${file}`);
-                    args = '--file-uri';
-                    isDir = false;
+                    filePaths.push(file);
                 }
             });
 
-            let newWindow = this._newWindow ? '--new-window' : '';
+            // Determine if a new window flag is needed
+            let newWindowArg = (this._newWindow || dirPaths.length > 0) ? '--new-window' : '';
+            let command = this._activeEditor?.binary;
+            if (!command) throw new Error('No active editor found');
 
-            if (isDir) {
-                newWindow = '--new-window';
+            // Build arguments for directories and files
+            if (dirPaths.length > 0) {
+                const dirsArg = dirPaths.map(dir => `"${dir}"`).join(' ');
+                command += ` ${newWindowArg} --folder-uri ${dirsArg}`;
             }
 
-            const command = `${this._activeEditor?.binary} ${newWindow} ${args} ${safePaths}`;
+            if (filePaths.length > 0) {
+                const filesArg = filePaths.map(file => `"${file}"`).join(' ');
+                if (dirPaths.length === 0) {
+                    command += ` ${newWindowArg} --file-uri ${filesArg}`;
+                } else {
+                    // If directories are already specified, append files normally
+                    command += ` ${filesArg}`;
+                }
+            }
+
             this._log(`Command to execute: ${command}`);
             GLib.spawn_command_line_async(command);
         } catch (error) {
