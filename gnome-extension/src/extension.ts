@@ -268,82 +268,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 track_hover: true,
             });
 
-            const comboBoxSubMenu = new PopupMenu.PopupSubMenuMenuItem('Recent Workspaces');
-            const comboBoxMenu = comboBoxSubMenu.menu;
-
-            comboBoxButton.connect('clicked', (_button: St.Button) => {
-                comboBoxMenu.toggle();
-            });
-
-            // Create the PopupMenu for the ComboBox items
-            Array.from(this._recentWorkspaces).forEach(workspace => {
-                // Create a menu item without default text
-                const item = new PopupMenu.PopupMenuItem('');
-                item.actor.add_style_class_name('custom-menu-item');
-                // Create a label that shows the short name by default
-                const label = new St.Label({ text: this._get_name(workspace) });
-                // Insert the label at the beginning
-                item.actor.insert_child_at_index(label, 0);
-
-                let tooltip: St.Widget | null = null;
-                item.actor.connect('enter-event', () => {
-                    tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
-                    const [x, y] = item.actor.get_transformed_position();
-                    Main.layoutManager.addChrome(tooltip);
-                    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                        if (!tooltip) {
-                            return GLib.SOURCE_REMOVE;
-                        }
-
-                        const natWidth = tooltip.allocation.get_width();
-                        tooltip.set_position(x - natWidth - 1, y);
-                        return GLib.SOURCE_REMOVE;
-                    });
-                });
-                item.actor.connect('leave-event', () => {
-                    if (tooltip) {
-                        Main.layoutManager.removeChrome(tooltip);
-                        tooltip = null;
-                    }
-                });
-
-                const trashIcon = new St.Icon({
-                    icon_name: 'user-trash-symbolic',
-                    style_class: 'trash-icon',
-                });
-
-                const trashButton = new St.Button({
-                    child: trashIcon,
-                    style_class: 'trash-button',
-                    reactive: true,
-                    can_focus: true,
-                    track_hover: true,
-                });
-
-                trashButton.connect('enter-event', () => {
-                    trashIcon.add_style_class_name('trash-icon-hover');
-                });
-
-                trashButton.connect('leave-event', () => {
-                    trashIcon.remove_style_class_name('trash-icon-hover');
-                });
-
-                trashButton.connect('clicked', () => {
-                    workspace.softRemove();
-                });
-
-                item.add_child(trashButton);
-
-                item.connect('activate', () => {
-                    comboBoxButton.label = workspace.name;
-                    this._openWorkspace(workspace.path);
-                });
-
-                comboBoxMenu.addMenuItem(item);
-            });
-
-            // Force the Recent Workspaces submenu to be open by default
-            comboBoxSubMenu.menu.open(true);
 
             const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
                 reactive: false,
@@ -351,7 +275,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
             comboBoxMenuItem.actor.add_child(comboBoxButton);
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
 
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxSubMenu);
+            // Load recent workspaces
+            this._loadRecentWorkspaces();
 
             // Add Settings and Quit items
             const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
@@ -424,10 +349,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         return path;
     }
 
-    // Modify _loadRecentWorkspaces to show full path on hover, and short name by default
     _loadRecentWorkspaces() {
-        this._getRecentWorkspaces();
-
         if (this._recentWorkspaces?.size === 0) {
             this._log('No recent workspaces found');
             return;
