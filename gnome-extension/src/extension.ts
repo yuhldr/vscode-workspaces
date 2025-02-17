@@ -343,12 +343,20 @@ export default class VSCodeWorkspacesExtension extends Extension {
             // Insert the label at the beginning
             item.actor.insert_child_at_index(label, 0);
 
-            // On hover, update the label to show full path, and revert on leave
+            // Replace tooltip handling to use a closure variable instead of attaching property to item.actor
+            let tooltip: St.Widget | null = null;
             item.actor.connect('enter-event', () => {
-                label.set_text(this._get_full_path(workspace));
+                tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
+                const [x, y] = item.actor.get_transformed_position();
+                // Position tooltip on the left side using a fixed offset (adjust as needed)
+                tooltip.set_position(x - 150, y);
+                Main.layoutManager.addChrome(tooltip);
             });
             item.actor.connect('leave-event', () => {
-                label.set_text(this._get_name(workspace));
+                if (tooltip) {
+                    Main.layoutManager.removeChrome(tooltip);
+                    tooltip = null;
+                }
             });
 
             const trashIcon = new St.Icon({

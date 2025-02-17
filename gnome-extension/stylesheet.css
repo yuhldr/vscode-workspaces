@@ -62,7 +62,6 @@
     width: 100%;
 }
 
-// This is a label for the entire window, a title
 .workspace-combo-button {
     margin-top: 10px;
     width: 100%;
@@ -77,4 +76,35 @@
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
+}
+
+/* Tooltip styling for Recent Workspaces */
+.workspace-tooltip {
+    background: rgba(0, 0, 0, 0.8);
+    color: #ffffff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    position: absolute;
+    z-index: 1000;
+    transition: opacity 0.2s ease;
+    opacity: 0;
+}
+
+.workspace-tooltip.show {
+    opacity: 1;
+}
+
+/* Optionally, add an arrow to the tooltip */
+.workspace-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -6px;
+    transform: translateY(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent rgba(0, 0, 0, 0.8) transparent transparent;
 }
