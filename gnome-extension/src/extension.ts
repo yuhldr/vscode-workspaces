@@ -230,6 +230,23 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
+            const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
+                reactive: false,
+            });
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
+
+            // Add Settings and Quit items
+            const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
+            const itemClearWorkspaces = new PopupMenu.PopupMenuItem('Clear Workspaces');
+            itemClearWorkspaces.connect('activate', () => {
+                this._clearRecentWorkspaces();
+            });
+
+            const itemRefresh = new PopupMenu.PopupMenuItem('Refresh');
+            itemRefresh.connect('activate', () => {
+                this._refresh();
+            });
+
             // Add editor selector if multiple editors are found
             if (this._foundEditors.length > 1) {
                 const editorSelector = new PopupMenu.PopupSubMenuMenuItem('Select Editor');
@@ -246,34 +263,18 @@ export default class VSCodeWorkspacesExtension extends Extension {
                         this._editorLocation = editor.binary;
                         this.gsettings?.set_string('editor-location', editor.binary);
                         this._setActiveEditor();
-                        this._createMenu();
+                        this._refresh();
                     });
 
                     editorSelector.menu.addMenuItem(item);
                 });
 
-                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
-                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                itemSettings.menu.addMenuItem(editorSelector);
+                itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             }
 
-            const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
-                reactive: false,
-            });
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
-
-            // Add Settings and Quit items
-            const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
-            const itemClearWorkspaces = new PopupMenu.PopupMenuItem('Clear Workspaces');
-            itemClearWorkspaces.connect('activate', () => {
-                this._clearRecentWorkspaces();
-            });
-
-            const itemRefresh = new PopupMenu.PopupMenuItem('Refresh');
-            itemRefresh.connect('activate', () => {
-                this._createMenu();
-            });
-
             itemSettings.menu.addMenuItem(itemClearWorkspaces);
+            itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             itemSettings.menu.addMenuItem(itemRefresh);
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
@@ -758,8 +759,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     _refresh() {
         this._getRecentWorkspaces();
-        this._createMenu();
         this._createRecentWorkspacesMenu();
+        this._createMenu();
     }
 
     _log(message: any): void {
