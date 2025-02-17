@@ -220,16 +220,19 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._menuUpdating = true;
 
         try {
-            /* // Check that menu has isOpen() available before calling it
+            // Check that menu has isOpen() available before calling it
             if (this._indicator.menu instanceof PopupMenu.PopupMenu && this._indicator.menu.isOpen) {
                 this._indicator.menu.close(true);
-            } */
+            }
 
             (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
             const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
-                reactive: false,
+                reactive: true,
             });
+
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
 
             // Add Settings and Quit items
@@ -245,9 +248,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
             });
 
             itemSettings.menu.addMenuItem(itemClearWorkspaces);
-            itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             itemSettings.menu.addMenuItem(itemRefresh);
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
+
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
             // Add editor selector if multiple editors are found
             if (this._foundEditors.length > 1) {
@@ -278,6 +282,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
             itemQuit.connect('activate', () => {
                 this._quit();
             });
+
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemQuit);
         } finally {
             this._menuUpdating = false;
@@ -417,7 +424,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         comboBoxMenu.open(true);
 
         const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
-            reactive: false,
+            reactive: true,
         });
         comboBoxMenuItem.actor.add_child(comboBoxButton);
         (this._indicator?.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
