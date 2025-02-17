@@ -108,3 +108,11 @@
     border-style: solid;
     border-color: transparent rgba(0, 0, 0, 0.8) transparent transparent;
 }
+
+/* Additional spacing for popup menu items in the extension */
+.popup-menu-item {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 16px;
+    padding-right: 16px;
+}

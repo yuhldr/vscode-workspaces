@@ -349,7 +349,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
                 const [x, y] = item.actor.get_transformed_position();
                 // Position tooltip on the left side using a fixed offset (adjust as needed)
-                tooltip.set_position(x - 150, y);
+                //tooltip.set_position(x - 150, y);
+                const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
+                tooltip.set_position(x - natWidth - 10, y);
+
                 Main.layoutManager.addChrome(tooltip);
             });
             item.actor.connect('leave-event', () => {
