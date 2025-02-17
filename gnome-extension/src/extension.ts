@@ -41,7 +41,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
     gsettings?: Gio.Settings;
 
     private _indicator?: PanelMenu.Button;
-    private _refreshInterval: number = 300;
+    private _refreshInterval: number = 30;
     private _refreshTimeout: number | null = null;
     private _newWindow: boolean = false;
     private _editorLocation: string = '';
@@ -220,13 +220,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._menuUpdating = true;
 
         try {
-            // Update recent workspaces before building menu
-            this._getRecentWorkspaces();
-
-            // Check that menu has isOpen() available before calling it
+            /* // Check that menu has isOpen() available before calling it
             if (this._indicator.menu instanceof PopupMenu.PopupMenu && this._indicator.menu.isOpen) {
                 this._indicator.menu.close(true);
-            }
+            } */
 
             (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
@@ -246,6 +243,11 @@ export default class VSCodeWorkspacesExtension extends Extension {
             itemRefresh.connect('activate', () => {
                 this._refresh();
             });
+
+            itemSettings.menu.addMenuItem(itemClearWorkspaces);
+            itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            itemSettings.menu.addMenuItem(itemRefresh);
+            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
 
             // Add editor selector if multiple editors are found
             if (this._foundEditors.length > 1) {
@@ -269,15 +271,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
                     editorSelector.menu.addMenuItem(item);
                 });
 
-                itemSettings.menu.addMenuItem(editorSelector);
-                itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
             }
-
-            itemSettings.menu.addMenuItem(itemClearWorkspaces);
-            itemSettings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-            itemSettings.menu.addMenuItem(itemRefresh);
-
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
 
             const itemQuit = new PopupMenu.PopupMenuItem('Quit');
             itemQuit.connect('activate', () => {
