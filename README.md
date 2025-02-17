@@ -103,6 +103,16 @@ After installation you need to enable the extension.
 - First restart GNOME Shell (`ALt` + `F2`, `r`, `Enter`, or Log-Out/Log-In if you use Wayland)
 - Now you should see the _VSCode W_ extension in the _Extensions_ application (reopen the app if needed to load new data), where you can enable it.
 
+### Debugging
+
+The GNOME Extension has a debug mode that is enabled by default. You can disable it by opening the settings of the extension in the GNOME Extensions application.
+
+I personally use Extensions List, a GNOME Shell extension.
+
+If you would like to see logs for this extension: `journalctl /usr/bin/gnome-shell -f | grep vscode-workspaces`.
+
+Or simply run `journalctl /usr/bin/gnome-shell -f` and look for the logs.
+
 ### Contributing
 
 If you'd like to contribute, please fork the repository and use a feature branch. Pull requests are warmly welcome :smile:
