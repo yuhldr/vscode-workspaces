@@ -227,15 +227,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
-            const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
-                reactive: true,
-            });
-
             this._createRecentWorkspacesMenu();
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-            (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
 
             // Add Settings and Quit items
             const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
@@ -343,20 +337,20 @@ export default class VSCodeWorkspacesExtension extends Extension {
             return;
         }
 
-        const comboBoxButton: St.Button = new St.Button({
-            label: 'Workspaces',
-            style_class: 'workspace-combo-button',
-            reactive: true,
-            can_focus: true,
-            track_hover: true,
-        });
+        //const comboBoxButton: St.Button = new St.Button({
+        //    label: 'Workspaces',
+        //    style_class: 'workspace-combo-button',
+        //    reactive: true,
+        //    can_focus: true,
+        //    track_hover: true,
+        //});
 
         const comboBoxSubMenu = new PopupMenu.PopupSubMenuMenuItem('Recent Workspaces');
         const comboBoxMenu = comboBoxSubMenu.menu;
 
-        comboBoxButton.connect('clicked', (_button: St.Button) => {
-            comboBoxMenu.toggle();
-        });
+        //comboBoxButton.connect('clicked', (_button: St.Button) => {
+        //    comboBoxMenu.toggle();
+        //});
 
         // Create the PopupMenu for the ComboBox items
         Array.from(this._recentWorkspaces).forEach(workspace => {
@@ -407,7 +401,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             item.add_child(trashButton);
 
             item.connect('activate', () => {
-                comboBoxButton.label = workspace.name;
+                //comboBoxButton.label = workspace.name;
                 this._openWorkspace(workspace.path);
             });
 
@@ -416,11 +410,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
         comboBoxSubMenu.menu.open(true);
 
-        const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
-            reactive: true,
-        });
-        comboBoxMenuItem.actor.add_child(comboBoxButton);
-        (this._indicator?.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
+        //comboBoxMenuItem.actor.add_child(comboBoxButton);
 
         (this._indicator?.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxSubMenu);
     }
