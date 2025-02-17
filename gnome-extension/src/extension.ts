@@ -95,10 +95,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._indicator.add_child(icon);
 
         Main.panel.addToStatusArea(this.metadata.uuid, this._indicator);
-
-        this._startRefresh();
         this._setSettings();
-        this._createMenu();
 
         this.gsettings.connect('changed', () => {
             this._setSettings();
@@ -106,7 +103,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
         });
 
         this._initializeWorkspaces();
-        this._startRefresh();
     }
 
     disable() {
@@ -159,7 +155,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._log('No active editor found');
             return;
         }
-        this._getRecentWorkspaces();
+
+        // Load recent workspaces
+        this._refresh();
     }
 
     _setActiveEditor() {
@@ -182,7 +180,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     _setSettings() {
-
         if (!this.gsettings) {
             this._log('Settings not found');
             return;
@@ -259,24 +256,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             }
 
-            // Recent Workspaces should be default open
-            const comboBoxButton: St.Button = new St.Button({
-                label: 'Workspaces',
-                style_class: 'workspace-combo-button',
-                reactive: true,
-                can_focus: true,
-                track_hover: true,
-            });
-
-
             const comboBoxMenuItem = new PopupMenu.PopupBaseMenuItem({
                 reactive: false,
             });
-            comboBoxMenuItem.actor.add_child(comboBoxButton);
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(comboBoxMenuItem);
-
-            // Load recent workspaces
-            this._loadRecentWorkspaces();
 
             // Add Settings and Quit items
             const itemSettings = new PopupMenu.PopupSubMenuMenuItem('Settings');
@@ -349,7 +332,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         return path;
     }
 
-    _loadRecentWorkspaces() {
+    _createRecentWorkspacesMenu() {
         if (this._recentWorkspaces?.size === 0) {
             this._log('No recent workspaces found');
             return;
@@ -766,10 +749,17 @@ export default class VSCodeWorkspacesExtension extends Extension {
             GLib.PRIORITY_DEFAULT,
             this._refreshInterval,
             () => {
-                this._createMenu();
+                // Load recent workspaces
+                this._refresh();
                 return GLib.SOURCE_CONTINUE;
             }
         );
+    }
+
+    _refresh() {
+        this._getRecentWorkspaces();
+        this._createMenu();
+        this._createRecentWorkspacesMenu();
     }
 
     _log(message: any): void {
