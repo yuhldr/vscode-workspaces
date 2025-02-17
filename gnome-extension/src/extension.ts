@@ -40,7 +40,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _indicator?: PanelMenu.Button;
     private _refreshInterval: number = 300;
-    private _refreshTimeout: any = null;
+    private _refreshTimeout: number | null = null;
     private _newWindow: boolean = false;
     private _editorLocation: string = '';
     private _preferCodeWorkspaceFile: boolean = false;
@@ -78,7 +78,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         let iconName = 'code';
         for (const name of this._iconNames) {
             if (this._iconExists(name)) {
-                iconName = iconName;
+                iconName = name;
                 break;
             }
         }
@@ -102,6 +102,26 @@ export default class VSCodeWorkspacesExtension extends Extension {
         });
 
         this._initializeWorkspaces();
+    }
+
+    disable() {
+        if (this._refreshTimeout) {
+            GLib.source_remove(this._refreshTimeout);
+            this._refreshTimeout = null;
+        }
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = undefined;
+        }
+        this.gsettings = undefined;
+
+        // clean up the cache
+        this._workspaces.clear();
+        this._recentWorkspaces.clear();
+        this._foundEditors = [];
+        this._activeEditor = undefined;
+
+        this._log(`VSCode Workspaces Extension disabled`);
     }
 
     _initializeWorkspaces() {
@@ -156,32 +176,18 @@ export default class VSCodeWorkspacesExtension extends Extension {
         }
     }
 
-    disable() {
-        if (this._refreshTimeout) {
-            GLib.source_remove(this._refreshTimeout);
-            this._refreshTimeout = null;
-        }
-        if (this._indicator) {
-            this._indicator.destroy();
-            this._indicator = undefined;
-        }
-        this.gsettings = undefined;
-
-        // clean up the cache
-        this._workspaces.clear();
-        this._recentWorkspaces.clear();
-        this._foundEditors = [];
-        this._activeEditor = undefined;
-
-        this._log(`VSCode Workspaces Extension disabled`);
-    }
-
     _setSettings() {
-        this._newWindow = this.gsettings!.get_value('new-window').deepUnpack() ?? false;
-        this._editorLocation = this.gsettings!.get_value('editor-location').deepUnpack() ?? 'auto';
-        this._refreshInterval = this.gsettings!.get_value('refresh-interval').deepUnpack() ?? 300;
-        this._preferCodeWorkspaceFile = this.gsettings!.get_value('prefer-workspace-file').deepUnpack() ?? false;
-        this._debug = this.gsettings!.get_value('debug').deepUnpack() ?? false;
+
+        if (!this.gsettings) {
+            this._log('No GSettings found');
+            return;
+        }
+
+        this._newWindow = this.gsettings.get_value('new-window').deepUnpack() ?? false;
+        this._editorLocation = this.gsettings.get_value('editor-location').deepUnpack() ?? 'auto';
+        this._refreshInterval = this.gsettings.get_value('refresh-interval').deepUnpack() ?? 300;
+        this._preferCodeWorkspaceFile = this.gsettings.get_value('prefer-workspace-file').deepUnpack() ?? false;
+        this._debug = this.gsettings.get_value('debug').deepUnpack() ?? false;
 
         this._log(`Workspaces Extension enabled`);
         this._log(`New Window: ${this._newWindow}`);
@@ -772,7 +778,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     _startRefresh() {
-        if (this._refreshTimeout) {
+        if (this._refreshTimeout !== null) {
             GLib.source_remove(this._refreshTimeout);
             this._refreshTimeout = null;
         }
