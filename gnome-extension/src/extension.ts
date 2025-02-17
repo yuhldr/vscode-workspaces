@@ -105,6 +105,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         });
 
         this._initializeWorkspaces();
+        this._startRefresh();
     }
 
     disable() {
@@ -338,22 +339,25 @@ export default class VSCodeWorkspacesExtension extends Extension {
         Array.from(this._recentWorkspaces).forEach(workspace => {
             // Create a menu item without default text
             const item = new PopupMenu.PopupMenuItem('');
+            // Add custom style class to ensure our CSS is applied
+            item.actor.add_style_class_name('custom-menu-item');
             // Create a label that shows the short name by default
             const label = new St.Label({ text: this._get_name(workspace) });
             // Insert the label at the beginning
             item.actor.insert_child_at_index(label, 0);
 
-            // Replace tooltip handling to use a closure variable instead of attaching property to item.actor
             let tooltip: St.Widget | null = null;
             item.actor.connect('enter-event', () => {
                 tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
                 const [x, y] = item.actor.get_transformed_position();
-                // Position tooltip on the left side using a fixed offset (adjust as needed)
-                //tooltip.set_position(x - 150, y);
-                const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
-                tooltip.set_position(x - natWidth - 10, y);
-
                 Main.layoutManager.addChrome(tooltip);
+                // Use idle_add to wait for the tooltip to be allocated
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                    if (!tooltip) return GLib.SOURCE_REMOVE;
+                    const natWidth = tooltip.allocation.get_width();
+                    tooltip.set_position(x - natWidth - 10, y);
+                    return GLib.SOURCE_REMOVE;
+                });
             });
             item.actor.connect('leave-event', () => {
                 if (tooltip) {
