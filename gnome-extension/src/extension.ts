@@ -104,6 +104,26 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._initializeWorkspaces();
     }
 
+    disable() {
+        if (this._refreshTimeout) {
+            GLib.source_remove(this._refreshTimeout);
+            this._refreshTimeout = null;
+        }
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = undefined;
+        }
+        this.gsettings = undefined;
+
+        // clean up the cache
+        this._workspaces.clear();
+        this._recentWorkspaces.clear();
+        this._foundEditors = [];
+        this._activeEditor = undefined;
+
+        this._log(`VSCode Workspaces Extension disabled`);
+    }
+
     _initializeWorkspaces() {
         this._log('Initializing workspaces');
         this._workspaces.clear();
@@ -154,26 +174,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
         } else {
             this._log('No editor found!');
         }
-    }
-
-    disable() {
-        if (this._refreshTimeout) {
-            GLib.source_remove(this._refreshTimeout);
-            this._refreshTimeout = null;
-        }
-        if (this._indicator) {
-            this._indicator.destroy();
-            this._indicator = undefined;
-        }
-        this.gsettings = undefined;
-
-        // clean up the cache
-        this._workspaces.clear();
-        this._recentWorkspaces.clear();
-        this._foundEditors = [];
-        this._activeEditor = undefined;
-
-        this._log(`VSCode Workspaces Extension disabled`);
     }
 
     _setSettings() {
