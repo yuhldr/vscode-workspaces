@@ -111,22 +111,22 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     disable() {
-        this._cleanup()
-        this._log(`VSCode Workspaces Extension disabled`);
-    }
-
-
-    private _cleanup() {
+        this._cleanup();
         if (this._refreshTimeout) {
             GLib.source_remove(this._refreshTimeout);
             this._refreshTimeout = null;
         }
+        
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = undefined;
         }
         this.gsettings = undefined;
+        this._log(`VSCode Workspaces Extension disabled`);
+    }
 
+
+    private _cleanup() {
         // clean up the cache
         this._workspaces.clear();
         this._recentWorkspaces.clear();
@@ -203,7 +203,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._nofailList = this.gsettings.get_value('nofail-workspaces').deepUnpack() ?? [];
         this._customCmdArgs = this.gsettings.get_value('custom-cmd-args').deepUnpack() ?? '';
 
-        this._log(`Workspaces Extension enabled`);
         this._log(`New Window: ${this._newWindow}`);
         this._log(`Workspaces Storage Location: ${this._editorLocation}`);
         this._log(`Refresh Interval: ${this._refreshInterval}`);
