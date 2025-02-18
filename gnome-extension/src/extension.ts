@@ -107,6 +107,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._startRefresh();
         });
 
+        this._refresh();
         this._initializeWorkspaces();
     }
 
@@ -116,7 +117,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             GLib.source_remove(this._refreshTimeout);
             this._refreshTimeout = null;
         }
-        
+
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = undefined;
@@ -140,7 +141,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _initializeWorkspaces() {
         this._log('Initializing workspaces');
-        this._cleanup();
+        //this._cleanup();
 
         for (const editor of this._editors) {
             const dir = Gio.File.new_for_path(editor.workspacePath);
