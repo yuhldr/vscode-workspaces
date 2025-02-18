@@ -8,6 +8,12 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
+// TODO: Show project tags
+// TODO: View as tags
+// TODO: Filter by tags
+// TODO: Sort by Path, Recent, Saved
+// TODO: Ability to mark as favorite
+// TODO: Show favourites at the top separated by a separator
 // TODO: Implement support for snap, and flatpak installations
 
 interface Workspace {
