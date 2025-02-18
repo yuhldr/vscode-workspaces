@@ -8,16 +8,13 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-// TODO: Support remote files and folders, vscode-remote://, and docker containers
-
-// TODO: Implement support for codium, insiders, snap, and flatpak installations
-
-// TODO: Implement support for custom cmd args
+// TODO: Implement support for snap, and flatpak installations
 
 interface Workspace {
     uri: string;
     storeDir: Gio.File | null;
     nofail?: boolean;
+    remote?: boolean; // true if workspace is remote (vscode-remote:// or docker://)
 }
 
 interface RecentWorkspace {
@@ -415,9 +412,11 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 this._log('No folder or workspace property found in workspace.json');
                 return null;
             }
+            // Determine if the workspace URI indicates a remote resource
+            const remote = workspaceURI.startsWith('vscode-remote://') || workspaceURI.startsWith('docker://');
             const nofail = json.nofail === true;
-            this._log(`Parsed workspace.json in ${workspaceStoreDir.get_path()} with ${workspaceURI} (nofail: ${nofail})`);
-            return { uri: workspaceURI, storeDir: workspaceStoreDir, nofail };
+            this._log(`Parsed workspace.json in ${workspaceStoreDir.get_path()} with ${workspaceURI} (nofail: ${nofail}, remote: ${remote})`);
+            return { uri: workspaceURI, storeDir: workspaceStoreDir, nofail, remote };
         } catch (error) {
             logError(error as object, 'Failed to parse workspace.json');
             return null;
@@ -473,23 +472,25 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 // Update workspace.json with nofail if needed
                 this._maybeUpdateWorkspaceNoFail(workspace);
 
-                const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
-                // If workspace does not exist, only remove if cleanup is enabled and workspace not marked as nofail
-                if (!pathToWorkspace.query_exists(null)) {
-                    this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
-                    if (this._cleanupOrphanedWorkspaces && !workspace.nofail) {
-                        this._log(`Workspace will be removed: ${pathToWorkspace.get_path()}`);
-                        this._workspaces.delete(workspace);
-                        const trashRes = workspace.storeDir?.trash(null);
-                        if (!trashRes) {
-                            this._log(`Failed to move workspace to trash: ${workspace.uri}`);
-                            continue;
+                // Only check existence if not remote
+                if (!workspace.remote) {
+                    const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
+                    if (!pathToWorkspace.query_exists(null)) {
+                        this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
+                        if (this._cleanupOrphanedWorkspaces && !workspace.nofail) {
+                            this._log(`Workspace will be removed: ${pathToWorkspace.get_path()}`);
+                            this._workspaces.delete(workspace);
+                            const trashRes = workspace.storeDir?.trash(null);
+                            if (!trashRes) {
+                                this._log(`Failed to move workspace to trash: ${workspace.uri}`);
+                                continue;
+                            }
+                            this._log(`Workspace trashed: ${workspace.uri}`);
+                        } else {
+                            this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
                         }
-                        this._log(`Workspace trashed: ${workspace.uri}`);
-                    } else {
-                        this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
+                        continue;
                     }
-                    continue;
                 }
                 callback(workspace);
                 if ([...this._workspaces].some(ws => ws.uri === workspace.uri)) {
