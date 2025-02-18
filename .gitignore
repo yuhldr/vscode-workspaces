@@ -36,3 +36,4 @@ po/*.po~
 
 # Ignore TODOs
 TODOs.txt
+gnome-extension/schemas/gschemas.compiled
