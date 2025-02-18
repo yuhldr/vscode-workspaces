@@ -29,7 +29,7 @@ install: $(NAME).zip
 	@echo "Extension installed. Restart GNOME Shell with Alt+F2, then 'r'. Or login again."
 
 clean:
-	@rm -rf dist node_modules $(NAME).zip
+	@rm -rf dist node_modules $(NAME).zip schemas/gschemas.compiled
 
 help:
 	@echo "Available targets:"
