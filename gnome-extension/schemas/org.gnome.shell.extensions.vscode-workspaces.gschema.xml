@@ -29,5 +29,16 @@
             <summary>Refresh Interval</summary>
             <description>Refresh Interval for the scanning workspaces, in Seconds</description>
         </key>
+        <key name="cleanup-orphaned-workspaces" type="b">
+            <default>false</default>
+            <summary>Cleanup Orphaned Workspaces</summary>
+            <description>If true, automatically remove orphaned workspace directories.</description>
+        </key>
+        <key name="nofail-workspaces" type="as">
+            <default>[]</default>
+            <summary>No-fail Workspaces</summary>
+            <description>Comma separated list of workspace names (as an array of strings) that
+                should not be cleaned up.</description>
+        </key>
     </schema>
 </schemalist>

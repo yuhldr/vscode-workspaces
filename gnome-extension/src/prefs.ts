@@ -72,6 +72,34 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         });
         refreshIntervalGroup.add(refreshGroupEntry);
 
+        // Add new group for Cleanup Settings at end of fillPreferencesWindow
+
+        const cleanupGroup = new Adw.PreferencesGroup({
+            title: _('Cleanup Settings'),
+            description: _('Advanced settings for workspace cleanup'),
+        });
+
+        // Switch row for Cleanup Orphaned Workspaces
+        const cleanupSwitch = new Adw.SwitchRow({
+            title: _('Cleanup Orphaned Workspaces'),
+            subtitle: _('Enable automatic cleanup of orphaned workspace directories'),
+        });
+        cleanupGroup.add(cleanupSwitch);
+
+        // Entry row for No-fail Workspaces (comma separated)
+        const nofailEntry = new Adw.EntryRow({
+            title: _('No-fail Workspaces'),
+            showApplyButton: true,
+            inputPurpose: Gtk.InputPurpose.TERMINAL,
+            inputHints: Gtk.InputHints.WORD_COMPLETION,
+            child: new Gtk.Entry({
+                placeholder_text: _('Comma separated list of workspace directories to not fail'),
+            })
+        });
+        cleanupGroup.add(nofailEntry);
+
+        page.add(cleanupGroup);
+
         // Bind settings
         _settings.bind(
             'new-window',
@@ -104,6 +132,20 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             'refresh-interval',
             refreshGroupEntry,
             'value',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+
+        // Bind new settings
+        _settings.bind(
+            'cleanup-orphaned-workspaces',
+            cleanupSwitch,
+            'active',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+        _settings.bind(
+            'nofail-workspaces',
+            nofailEntry,
+            'text',
             Gio.SettingsBindFlags.DEFAULT
         );
 
