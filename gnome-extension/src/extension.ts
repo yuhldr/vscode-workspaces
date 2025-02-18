@@ -70,6 +70,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
     private _menuUpdating: boolean = false;
     private _cleanupOrphanedWorkspaces: boolean = false;
     private _nofailList: string[] = [];
+    private _customCmdArgs: string = '';
 
     enable() {
         this.gsettings = this.getSettings();
@@ -193,6 +194,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._debug = this.gsettings.get_value('debug').deepUnpack() ?? false;
         this._cleanupOrphanedWorkspaces = this.gsettings.get_value('cleanup-orphaned-workspaces').deepUnpack() ?? false;
         this._nofailList = this.gsettings.get_value('nofail-workspaces').deepUnpack() ?? [];
+        this._customCmdArgs = this.gsettings.get_value('custom-cmd-args').deepUnpack() ?? '';
 
         this._log(`Workspaces Extension enabled`);
         this._log(`New Window: ${this._newWindow}`);
@@ -202,6 +204,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._log(`Debug: ${this._debug}`);
         this._log(`Cleanup Orphaned Workspaces: ${this._cleanupOrphanedWorkspaces}`);
         this._log(`No-fail workspaces: ${this._nofailList.join(', ')}`);
+        this._log(`Custom CMD Args: ${this._customCmdArgs}`);
     }
 
     private _iconExists(iconName: string): boolean {
@@ -473,24 +476,25 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 this._maybeUpdateWorkspaceNoFail(workspace);
 
                 // Only check existence if not remote
-                if (!workspace.remote) {
-                    const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
-                    if (!pathToWorkspace.query_exists(null)) {
-                        this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
-                        if (this._cleanupOrphanedWorkspaces && !workspace.nofail) {
-                            this._log(`Workspace will be removed: ${pathToWorkspace.get_path()}`);
-                            this._workspaces.delete(workspace);
-                            const trashRes = workspace.storeDir?.trash(null);
-                            if (!trashRes) {
-                                this._log(`Failed to move workspace to trash: ${workspace.uri}`);
-                                continue;
-                            }
-                            this._log(`Workspace trashed: ${workspace.uri}`);
-                        } else {
-                            this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
+                /* if (!workspace.remote) {
+                    
+                } */
+                const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
+                if (!pathToWorkspace.query_exists(null)) {
+                    this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
+                    if (this._cleanupOrphanedWorkspaces && !workspace.nofail) {
+                        this._log(`Workspace will be removed: ${pathToWorkspace.get_path()}`);
+                        this._workspaces.delete(workspace);
+                        const trashRes = workspace.storeDir?.trash(null);
+                        if (!trashRes) {
+                            this._log(`Failed to move workspace to trash: ${workspace.uri}`);
+                            continue;
                         }
-                        continue;
+                        this._log(`Workspace trashed: ${workspace.uri}`);
+                    } else {
+                        this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
                     }
+                    continue;
                 }
                 callback(workspace);
                 if ([...this._workspaces].some(ws => ws.uri === workspace.uri)) {
@@ -641,6 +645,11 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 } else {
                     command += ` ${filesArg}`;
                 }
+            }
+
+            // Append custom command arguments if provided
+            if (this._customCmdArgs && this._customCmdArgs.trim() !== '') {
+                command += ` ${this._customCmdArgs}`;
             }
 
             this._log(`Command to execute: ${command}`);
