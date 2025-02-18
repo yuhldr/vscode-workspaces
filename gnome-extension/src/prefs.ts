@@ -37,7 +37,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         const editorLocation = new Adw.EntryRow({
             title: _('editor Location'),
             showApplyButton: true,
-            inputPurpose: Gtk.InputPurpose.TERMINAL,
+            inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
         });
 
@@ -51,9 +51,20 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             subtitle: _('Whether to prefer the workspace file over the workspace directory if a workspace file is present'),
         });
 
+        const customCmdArgs = new Adw.EntryRow({
+            title: _('Custom CMD Args'),
+            showApplyButton: true,
+            inputPurpose: Gtk.InputPurpose.FREE_FORM,
+            inputHints: Gtk.InputHints.NONE,
+            child: new Gtk.Entry({
+                placeholder_text: _('Custom command line arguments for launching the editor'),
+            })
+        });
+
         editorGroup.add(editorLocation);
         editorGroup.add(preferWorkspaceFile);
         editorGroup.add(debug);
+        editorGroup.add(customCmdArgs);
         page.add(editorGroup);
 
         // Group for Refresh Interval setting
@@ -90,7 +101,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         const nofailEntry = new Adw.EntryRow({
             title: _('No-fail Workspaces'),
             showApplyButton: true,
-            inputPurpose: Gtk.InputPurpose.TERMINAL,
+            inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
             child: new Gtk.Entry({
                 placeholder_text: _('Comma separated list of workspace directories to not fail'),
@@ -132,6 +143,13 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             'refresh-interval',
             refreshGroupEntry,
             'value',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+
+        _settings.bind(
+            'custom-cmd-args',
+            customCmdArgs,
+            'text',
             Gio.SettingsBindFlags.DEFAULT
         );
 

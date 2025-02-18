@@ -8,6 +8,11 @@
             <description>Path to your editor binary (code, codium, code-insiders) or 'auto' for
                 automatic detection</description>
         </key>
+        <key name="custom-cmd-args" type="s">
+            <default>''</default>
+            <summary>Custom CMD Args</summary>
+            <description>Arguments to pass to the editors' cli</description>
+        </key>
         <key name="new-window" type="b">
             <default>false</default>
             <summary>New Window</summary>

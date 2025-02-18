@@ -14,6 +14,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 // TODO: Sort by Path, Recent, Saved
 // TODO: Ability to mark as favorite
 // TODO: Show favourites at the top separated by a separator
+
 // TODO: Implement support for snap, and flatpak installations
 
 interface Workspace {
