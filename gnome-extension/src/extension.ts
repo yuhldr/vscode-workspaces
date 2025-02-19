@@ -1,7 +1,5 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
-//import Mtk from 'gi://Mtk';
-//import Shell from 'gi://Shell';
 import St from 'gi://St';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -14,8 +12,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 // TODO: Sort by Path, Recent, Saved
 // TODO: Ability to mark as favorite
 // TODO: Show favourites at the top separated by a separator
-
 // TODO: Implement support for snap, and flatpak installations
+// TODO: Add notifications for errors
 
 interface Workspace {
     uri: string;
@@ -219,7 +217,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             const iconTheme = St.IconTheme.new();
             return iconTheme.has_icon(iconName);
         } catch (error) {
-            logError(error as object, 'Failed to check if icon exists');
+            console.error(error as object, 'Failed to check if icon exists');
             return false;
         }
     }
@@ -324,7 +322,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             }
         } catch (error) {
             // In case of error, fallback to the base name.
-            logError(error as object, 'Error getting workspace name');
+            console.error(error as object, 'Error getting workspace name');
         }
         name = name.replace(GLib.get_home_dir(), '~');
         return name;
@@ -428,7 +426,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._log(`Parsed workspace.json in ${workspaceStoreDir.get_path()} with ${workspaceURI} (nofail: ${nofail}, remote: ${remote})`);
             return { uri: workspaceURI, storeDir: workspaceStoreDir, nofail, remote };
         } catch (error) {
-            logError(error as object, 'Failed to parse workspace.json');
+            console.error(error as object, 'Failed to parse workspace.json');
             return null;
         }
     }
@@ -463,7 +461,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 workspace.nofail = true;
                 this._log(`Successfully updated workspace.json for ${workspaceName}`);
             } catch (error) {
-                logError(error as object, `Failed to update workspace.json for ${workspaceName}`);
+                console.error(error as object, `Failed to update workspace.json for ${workspaceName}`);
             }
         }
     }
@@ -482,10 +480,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 // Update workspace.json with nofail if needed
                 this._maybeUpdateWorkspaceNoFail(workspace);
 
-                // Only check existence if not remote
-                /* if (!workspace.remote) {
-                    
-                } */
                 const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
                 if (!pathToWorkspace.query_exists(null)) {
                     this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
@@ -495,23 +489,23 @@ export default class VSCodeWorkspacesExtension extends Extension {
                         const trashRes = workspace.storeDir?.trash(null);
                         if (!trashRes) {
                             this._log(`Failed to move workspace to trash: ${workspace.uri}`);
-                            continue;
+                        } else {
+                            this._log(`Workspace trashed: ${workspace.uri}`);
                         }
-                        this._log(`Workspace trashed: ${workspace.uri}`);
                     } else {
                         this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
                     }
                     continue;
                 }
-                callback(workspace);
                 if ([...this._workspaces].some(ws => ws.uri === workspace.uri)) {
                     this._log(`Workspace already exists: ${workspace.uri}`);
                     continue;
                 }
                 this._workspaces.add(workspace);
+                callback(workspace);
             }
         } catch (error) {
-            logError(error as object, 'Error iterating workspace directory');
+            console.error(error as object, 'Error iterating workspace directory');
         } finally {
             if (enumerator) {
                 if (!enumerator.close(null)) {
@@ -565,43 +559,38 @@ export default class VSCodeWorkspacesExtension extends Extension {
             if (!activeEditorPath) return;
             const dir = Gio.File.new_for_path(activeEditorPath);
             this._iterateWorkspaceDir(dir, (workspace: Workspace) => {
-                // If not preferring .code-workspace file, skip extra check
+                // Log preference and, if preferring, perform .code-workspace check
                 if (!this._preferCodeWorkspaceFile) {
                     this._log(`Not preferring code-workspace file for ${workspace.uri}`);
-                    return;
-                }
-                const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
-                if (pathToWorkspace.query_file_type(Gio.FileQueryInfoFlags.NONE, null) !== Gio.FileType.DIRECTORY) {
-                    this._log(`Not a directory: ${pathToWorkspace.get_path()}`);
-                    return;
-                }
-                const enumerator = pathToWorkspace.enumerate_children('standard::*,unix::uid', Gio.FileQueryInfoFlags.NONE, null);
-                let info: Gio.FileInfo | null;
-                let workspaceFilePath: string | null = null;
-                while ((info = enumerator.next_file(null)) !== null) {
-                    const file = enumerator.get_child(info);
-                    if (file.get_basename()?.endsWith('.code-workspace')) {
-                        workspaceFilePath = file.get_path();
-                        break;
+                } else {
+                    const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
+                    if (pathToWorkspace.query_file_type(Gio.FileQueryInfoFlags.NONE, null) !== Gio.FileType.DIRECTORY) {
+                        this._log(`Not a directory: ${pathToWorkspace.get_path()}`);
+                        return;
+                    }
+                    const enumerator = pathToWorkspace.enumerate_children('standard::*,unix::uid', Gio.FileQueryInfoFlags.NONE, null);
+                    let info: Gio.FileInfo | null;
+                    let workspaceFilePath: string | null = null;
+                    while ((info = enumerator.next_file(null)) !== null) {
+                        const file = enumerator.get_child(info);
+                        if (file.get_basename()?.endsWith('.code-workspace')) {
+                            workspaceFilePath = file.get_path();
+                            break;
+                        }
+                    }
+                    if (!enumerator.close(null)) {
+                        throw new Error('Failed to close enumerator');
+                    }
+                    this._log(`Checked for .code-workspace: ${workspaceFilePath}`);
+                    if (!workspaceFilePath) return;
+                    const workspaceFile = Gio.File.new_for_path(workspaceFilePath);
+                    if (!workspaceFile.query_exists(null)) {
+                        this._log(`.code-workspace file does not exist in ${workspace.uri}`);
+                        return;
                     }
                 }
-                if (!enumerator.close(null)) {
-                    throw new Error('Failed to close enumerator');
-                }
-                this._log(`Checked for .code-workspace: ${workspaceFilePath}`);
-                if (!workspaceFilePath) return;
-                const workspaceFile = Gio.File.new_for_path(workspaceFilePath);
-                if (!workspaceFile.query_exists(null)) {
-                    this._log(`.code-workspace file does not exist in ${workspace.uri}`);
-                    return;
-                }
-                this._log(`Found .code-workspace file in ${workspace.uri}`);
-                this._workspaces.delete(workspace);
-                const recentItem = Array.from(this._recentWorkspaces).find(rw => rw.path === workspace.uri);
-                recentItem?.softRemove();
-                this._recentWorkspaces = new Set(
-                    Array.from(this._recentWorkspaces).filter(rw => rw.path !== workspace.uri)
-                );
+                // Previously, an undefined callback was called here. Removed callback invocation.
+                // Workspaces are added internally via this._workspaces in _iterateWorkspaceDir.
             });
 
             const sortedWorkspaces = Array.from(this._workspaces).sort((a, b) => {
@@ -616,7 +605,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._recentWorkspaces = new Set(sortedWorkspaces.map(ws => this._createRecentWorkspaceEntry(ws)));
             this._log(`[Recent Workspaces]: ${Array.from(this._recentWorkspaces).map(rw => rw.path)}`);
         } catch (e) {
-            logError(e as object, 'Failed to load recent workspaces');
+            console.error(e as object, 'Failed to load recent workspaces');
         }
     }
 
@@ -636,33 +625,37 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 }
             });
 
-            let newWindowArg = (this._newWindow || dirPaths.length > 0) ? '--new-window' : '';
-            let command = this._activeEditor?.binary;
-            if (!command) throw new Error('No active editor found');
+            // Build arguments array for consistency
+            const args: string[] = [];
+            if (this._newWindow) {
+                args.push('--new-window');
+            }
 
             if (dirPaths.length > 0) {
-                const dirsArg = dirPaths.map(dir => `"${dir}"`).join(' ');
-                command += ` ${newWindowArg} --folder-uri ${dirsArg}`;
+                args.push('--folder-uri');
+                args.push(...dirPaths.map(dir => `"${dir}"`));
             }
 
             if (filePaths.length > 0) {
-                const filesArg = filePaths.map(file => `"${file}"`).join(' ');
                 if (dirPaths.length === 0) {
-                    command += ` ${newWindowArg} --file-uri ${filesArg}`;
-                } else {
-                    command += ` ${filesArg}`;
+                    args.push('--file-uri');
                 }
+                args.push(...filePaths.map(file => `"${file}"`));
             }
 
             // Append custom command arguments if provided
             if (this._customCmdArgs && this._customCmdArgs.trim() !== '') {
-                command += ` ${this._customCmdArgs}`;
+                args.push(this._customCmdArgs.trim());
             }
 
+            let command = this._activeEditor?.binary;
+            if (!command) throw new Error('No active editor found');
+
+            command += ` ${args.join(' ')}`;
             this._log(`Command to execute: ${command}`);
             GLib.spawn_command_line_async(command);
         } catch (error) {
-            logError(error as object, `Failed to launch ${this._activeEditor?.name}`);
+            console.error(error as object, `Failed to launch ${this._activeEditor?.name}`);
         }
     }
 
@@ -733,11 +726,11 @@ export default class VSCodeWorkspacesExtension extends Extension {
                             try {
                                 _iter?.close_finish(_res);
                             } catch (error) {
-                                logError(error as object, 'Failed to close iterator');
+                                console.error(error as object, 'Failed to close iterator');
                             }
                         });
                     } catch (error) {
-                        logError(error as object, 'Failed to delete recent workspaces');
+                        console.error(error as object, 'Failed to delete recent workspaces');
                     }
                 }
             );
@@ -746,7 +739,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             this._refresh();
         } catch (e) {
-            logError(`Failed to clear recent workspaces: ${e}`);
+            console.error(`Failed to clear recent workspaces: ${e}`);
         }
     }
 
@@ -782,6 +775,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
             return;
         }
 
-        log(`[${this.metadata.name}]: ${message}`);
+        console.log(`[${this.metadata.name}]: ${message}`);
     }
 }
