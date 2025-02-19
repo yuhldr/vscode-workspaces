@@ -6,14 +6,13 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
+// TODO: Add notifications for errors
+// TODO: Implement support for snap, and flatpak installations
+
 // TODO: Show project tags
 // TODO: View as tags
 // TODO: Filter by tags
 // TODO: Sort by Path, Recent, Saved
-// TODO: Ability to mark as favorite
-// TODO: Show favourites at the top separated by a separator
-// TODO: Implement support for snap, and flatpak installations
-// TODO: Add notifications for errors
 
 interface Workspace {
     uri: string;
@@ -383,7 +382,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     private _createTrashButton(workspace: RecentWorkspace): St.Button {
-
         const trashIcon = new St.Icon({
             icon_name: 'user-trash-symbolic',
             style_class: 'trash-icon',
@@ -434,7 +432,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
             const [x, y] = item.actor.get_transformed_position();
             const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
-            tooltip.set_position(x - Math.floor(natWidth / 1.25), y);
+            tooltip.set_position(x - Math.floor(natWidth / 1) + 2, y);
             Main.layoutManager.addChrome(tooltip);
         });
         item.actor.connect('leave-event', () => {

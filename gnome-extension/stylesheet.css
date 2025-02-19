@@ -36,11 +36,6 @@
 .trash-icon {
     color: inherit;
     cursor: pointer;
-    margin-left: 5px;
-    margin-right: 5px;
-    font-size: 1.2em;
-
-    transition: color 0.2s;
 
     -webkit-user-select: none;
     -moz-user-select: none;
@@ -50,42 +45,40 @@
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
 
-    display: inline-block;
     vertical-align: middle;
 
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
-    font-family: 'Material Icons';
-    font-weight: normal;
-    font-style: normal;
-
-    font-size: 16px;
-    line-height: 1;
-    letter-spacing: normal;
-    text-rendering: optimizeLegibility;
-    text-transform: none;
-    white-space: nowrap;
-
-    word-wrap: normal;
-    direction: ltr;
-    text-align: left;
-    text-indent: 0;
-    text-shadow: none;
-    text-decoration: none;
-
-    height: 16px;
     width: 16px;
+    height: 16px;
+    font-size: 1.2em;
+    color: #999;
+    transition: color 0.2s ease;
 }
 
-.icon-button:hover,
-.icon-button:focus .trash-icon {
+.icon-button:hover .trash-icon {
     color: red;
     transition: color 0.2s;
 }
 
 /* The star icon itself */
 .favorite-icon {
+    color: inherit;
+    cursor: pointer;
+
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    vertical-align: middle;
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
     width: 16px;
     height: 16px;
     font-size: 1.2em;
@@ -98,9 +91,8 @@
     color: #ffd700;
 }
 
-.icon-button:hover,
-.icon-button:focus .favorite-icon {
-    color: #f0c020;
+.icon-button:hover .favorite-icon {
+    color: #ffd700;
 }
 
 /* A horizontal container for label + favorite/trash icons */
