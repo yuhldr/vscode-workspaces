@@ -120,6 +120,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._indicator.destroy();
             this._indicator = undefined;
         }
+
         this.gsettings = undefined;
         this._log(`VSCode Workspaces Extension disabled`);
     }
@@ -145,6 +146,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         // Clean up only the cache; leave persistent settings intact
         this._workspaces.clear();
         this._recentWorkspaces.clear();
+        this._favorites.clear();
         this._log(`VSCode Workspaces Extension cleaned up`);
     }
 
