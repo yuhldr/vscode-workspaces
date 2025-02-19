@@ -45,5 +45,11 @@
             <description>Comma separated list of workspace names (as an array of strings) that
                 should not be cleaned up.</description>
         </key>
+        <key name="favourite-workspaces" type="as">
+            <default>[]</default>
+            <summary>Favourite Workspaces</summary>
+            <description>Comma separated list of workspace names (as an array of strings) that
+                should be shown at the top of the list.</description>
+        </key>
     </schema>
 </schemalist>
