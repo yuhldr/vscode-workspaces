@@ -354,7 +354,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
             style_class: 'favorite-icon',
         });
 
-        // If the workspace is already favorited, apply the .is-favorited class
         if (this._favorites.has(workspace.path)) {
             starIcon.add_style_class_name('is-favorited');
         }
@@ -370,10 +369,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._toggleFavorite(workspace);
 
             if (this._favorites.has(workspace.path)) {
-                // Mark as favorited
                 starIcon.add_style_class_name('is-favorited');
             } else {
-                // Un-favorited
                 starIcon.remove_style_class_name('is-favorited');
             }
         });
@@ -432,7 +429,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
             const [x, y] = item.actor.get_transformed_position();
             const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
-            tooltip.set_position(x - Math.floor(natWidth / 1) + 2, y);
+            tooltip.set_position(x - Math.floor(natWidth / 1.15), y);
             Main.layoutManager.addChrome(tooltip);
         });
         item.actor.connect('leave-event', () => {
