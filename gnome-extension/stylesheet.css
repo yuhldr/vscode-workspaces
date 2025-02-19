@@ -43,7 +43,8 @@
     width: 16px;
 }
 
-.trash-icon-hover {
+.trash-icon:hover,
+.trash-icon:focus {
     color: red;
     transition: color 0.2s;
 }
@@ -85,7 +86,7 @@
 
 /* If the item is actually favorited, keep it gold even when not hovering */
 .favorite-icon.is-favorited {
-    color: #ffd700; /* bright gold */
+    color: #ffd700;
 }
 
 /* The star icon itself */

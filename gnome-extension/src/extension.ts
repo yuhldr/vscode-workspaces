@@ -349,6 +349,89 @@ export default class VSCodeWorkspacesExtension extends Extension {
         return path;
     }
 
+    private _createFavoriteButton(workspace: RecentWorkspace): St.Button {
+        const starIcon = new St.Icon({
+            icon_name: this._favorites.has(workspace.path) ? 'tag-outline-symbolic' : 'tag-outline-add-symbolic',
+            style_class: 'favorite-icon',
+        });
+
+        // If the workspace is already favorited, apply the .is-favorited class
+        if (this._favorites.has(workspace.path)) {
+            starIcon.add_style_class_name('is-favorited');
+        }
+
+        const starButton = new St.Button({
+            child: starIcon,
+            style_class: 'favorite-button',
+            reactive: true,
+            can_focus: true,
+            track_hover: true,
+        });
+        starButton.connect('clicked', () => {
+            this._toggleFavorite(workspace);
+
+            if (this._favorites.has(workspace.path)) {
+                // Mark as favorited
+                starIcon.add_style_class_name('is-favorited');
+            } else {
+                // Un-favorited
+                starIcon.remove_style_class_name('is-favorited');
+            }
+        });
+
+        return starButton;
+    }
+
+    private _createTrashButton(workspace: RecentWorkspace): St.Button {
+
+        const trashIcon = new St.Icon({
+            icon_name: 'user-trash-symbolic',
+            style_class: 'trash-icon',
+        });
+        const trashButton = new St.Button({
+            child: trashIcon,
+            style_class: 'trash-button',
+            reactive: true,
+            can_focus: true,
+            track_hover: true,
+        });
+        trashButton.connect('clicked', () => {
+            workspace.softRemove();
+        });
+
+        return trashButton;
+    }
+
+    private _createItemContainer(workspace: RecentWorkspace): PopupMenu.PopupMenuItem {
+        const item = new PopupMenu.PopupMenuItem('');
+        item.actor.add_style_class_name('custom-menu-item');
+
+        // Create a horizontal container for label and buttons
+        const container = new St.BoxLayout({ style_class: 'workspace-box', vertical: false });
+
+        // Label with expand:true so it takes up available space
+        const label = new St.Label({ text: this._get_name(workspace) });
+        container.set_x_expand(true);
+        container.add_child(label);
+
+        //const label = new St.Label({ text: this._get_name(workspace) });
+        //item.actor.insert_child_at_index(label, 0);
+
+        const starButton = this._createFavoriteButton(workspace);
+        const trashButton = this._createTrashButton(workspace);
+
+        container.add_child(starButton);
+        container.add_child(trashButton);
+
+        item.add_child(container);
+
+        item.connect('activate', () => {
+            this._openWorkspace(workspace.path);
+        });
+
+        return item;
+    }
+
     private _createRecentWorkspacesMenu() {
         if (this._recentWorkspaces?.size === 0) {
             this._log('No recent workspaces found');
@@ -368,58 +451,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             const favSubMenu = new PopupMenu.PopupSubMenuMenuItem('Favorites');
             const favMenu = favSubMenu.menu;
             favorites.forEach(workspace => {
-                const item = new PopupMenu.PopupMenuItem('');
-                item.actor.add_style_class_name('custom-menu-item');
-
-                // Create a horizontal container for label and buttons
-                const container = new St.BoxLayout({ style_class: 'workspace-box', vertical: false });
-                // Label with expand:true so it takes up available space
-                const label = new St.Label({ text: this._get_name(workspace) });
-                container.set_x_expand(true);
-                container.add_child(label);
-
-                //const label = new St.Label({ text: this._get_name(workspace) });
-                //item.actor.insert_child_at_index(label, 0);
-
-                // Favorite toggle button
-                const starIcon = new St.Icon({
-                    icon_name: this._favorites.has(workspace.path) ? 'tag-outline-symbolic' : 'tag-outline-add-symbolic',
-                    style_class: 'favorite-icon',
-                });
-                const starButton = new St.Button({
-                    child: starIcon,
-                    style_class: 'favorite-button',
-                    reactive: true,
-                    can_focus: true,
-                    track_hover: true,
-                });
-                starButton.connect('clicked', () => {
-                    this._toggleFavorite(workspace);
-                });
-                container.add_child(starButton);
-
-                const trashIcon = new St.Icon({
-                    icon_name: 'user-trash-symbolic',
-                    style_class: 'trash-icon',
-                });
-                const trashButton = new St.Button({
-                    child: trashIcon,
-                    style_class: 'trash-button',
-                    reactive: true,
-                    can_focus: true,
-                    track_hover: true,
-                });
-                trashButton.connect('clicked', () => {
-                    workspace.softRemove();
-                });
-                container.add_child(trashButton);
-
-                item.add_child(container);
-
-                item.connect('activate', () => {
-                    this._openWorkspace(workspace.path);
-                });
-
+                const item = this._createItemContainer(workspace);
                 favMenu.addMenuItem(item);
             });
             popupMenu.addMenuItem(favSubMenu);
@@ -430,63 +462,14 @@ export default class VSCodeWorkspacesExtension extends Extension {
         const recentsSubMenu = new PopupMenu.PopupSubMenuMenuItem('Recent Workspaces');
         const recentsMenu = recentsSubMenu.menu;
         others.forEach(workspace => {
-            const item = new PopupMenu.PopupMenuItem('');
-            item.actor.add_style_class_name('custom-menu-item');
-
-            // Create a horizontal container for label and buttons
-            const container = new St.BoxLayout({ style_class: 'workspace-box', vertical: false });
-
-            // Label with expand:true so it takes up available space
-            const label = new St.Label({ text: this._get_name(workspace) });
-            label.set_x_expand(true);
-            container.add_child(label);
-            //item.actor.insert_child_at_index(label, 0);
-
-            // Favorite toggle button
-            const starIcon = new St.Icon({
-                icon_name: this._favorites.has(workspace.path) ? 'tag-outline-symbolic' : 'tag-outline-add-symbolic',
-                style_class: 'favorite-icon',
-            });
-            const starButton = new St.Button({
-                child: starIcon,
-                style_class: 'favorite-button',
-                reactive: true,
-                can_focus: true,
-                track_hover: true,
-            });
-            starButton.connect('clicked', () => {
-                this._toggleFavorite(workspace);
-            });
-            container.add_child(starButton);
-
-            const trashIcon = new St.Icon({
-                icon_name: 'user-trash-symbolic',
-                style_class: 'trash-icon',
-            });
-            const trashButton = new St.Button({
-                child: trashIcon,
-                style_class: 'trash-button',
-                reactive: true,
-                can_focus: true,
-                track_hover: true,
-            });
-            trashButton.connect('clicked', () => {
-                workspace.softRemove();
-            });
-            container.add_child(trashButton);
-
-            item.add_child(container);
-
-            item.connect('activate', () => {
-                this._openWorkspace(workspace.path);
-            });
+            const item = this._createItemContainer(workspace);
 
             let tooltip: St.Widget | null = null;
             item.actor.connect('enter-event', () => {
                 tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
                 const [x, y] = item.actor.get_transformed_position();
                 const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
-                tooltip.set_position(x - Math.floor(natWidth / 2), y);
+                tooltip.set_position(x - Math.floor(natWidth), y);
                 Main.layoutManager.addChrome(tooltip);
             });
             item.actor.connect('leave-event', () => {
