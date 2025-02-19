@@ -429,6 +429,21 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._openWorkspace(workspace.path);
         });
 
+        let tooltip: St.Widget | null = null;
+        item.actor.connect('enter-event', () => {
+            tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
+            const [x, y] = item.actor.get_transformed_position();
+            const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
+            tooltip.set_position(x - Math.floor(natWidth), y);
+            Main.layoutManager.addChrome(tooltip);
+        });
+        item.actor.connect('leave-event', () => {
+            if (tooltip) {
+                Main.layoutManager.removeChrome(tooltip);
+                tooltip = null;
+            }
+        });
+
         return item;
     }
 
@@ -463,22 +478,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
         const recentsMenu = recentsSubMenu.menu;
         others.forEach(workspace => {
             const item = this._createItemContainer(workspace);
-
-            let tooltip: St.Widget | null = null;
-            item.actor.connect('enter-event', () => {
-                tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
-                const [x, y] = item.actor.get_transformed_position();
-                const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
-                tooltip.set_position(x - Math.floor(natWidth), y);
-                Main.layoutManager.addChrome(tooltip);
-            });
-            item.actor.connect('leave-event', () => {
-                if (tooltip) {
-                    Main.layoutManager.removeChrome(tooltip);
-                    tooltip = null;
-                }
-            });
-
             recentsMenu.addMenuItem(item);
         });
         popupMenu.addMenuItem(recentsSubMenu);
@@ -865,6 +864,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._log(`Added favorite: ${workspace.path}`);
         }
         this._persistSettings();
-        this._createMenu();
+        this._refresh();
     }
 }
