@@ -1,7 +1,7 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import St from 'gi://St';
-import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { Extension, gettext } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
@@ -104,12 +104,12 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._setSettings();
             this._startRefresh();
         });
-
-        this._refresh();
         this._initializeWorkspaces();
     }
 
     disable() {
+        // Persist settings before cleaning up
+        this._persistSettings();
         this._cleanup();
         if (this._refreshTimeout) {
             GLib.source_remove(this._refreshTimeout);
@@ -124,22 +124,31 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._log(`VSCode Workspaces Extension disabled`);
     }
 
+    private _persistSettings() {
+        if (!this.gsettings) return;
+        // Persist the user settings so they remain across reboots
+        this.gsettings.set_strv('nofail-workspaces', this._nofailList);
+        this.gsettings.set_string('custom-cmd-args', this._customCmdArgs);
+
+        this.getSettings().set_boolean('new-window', this._newWindow);
+        this.getSettings().set_string('editor-location', this._editorLocation);
+        this.getSettings().set_int('refresh-interval', this._refreshInterval);
+        this.getSettings().set_boolean('prefer-workspace-file', this._preferCodeWorkspaceFile);
+        this.getSettings().set_boolean('debug', this._debug);
+        this.getSettings().set_boolean('cleanup-orphaned-workspaces', this._cleanupOrphanedWorkspaces);
+
+        this._log('Persisted settings to gsettings');
+    }
 
     private _cleanup() {
-        // clean up the cache
+        // Clean up only the cache; leave persistent settings intact
         this._workspaces.clear();
         this._recentWorkspaces.clear();
-        this._foundEditors = [];
-        this._activeEditor = undefined;
-        this._editors.length = 0;
-        this._nofailList.length = 0;
-
         this._log(`VSCode Workspaces Extension cleaned up`);
     }
 
     private _initializeWorkspaces() {
         this._log('Initializing workspaces');
-        //this._cleanup();
 
         for (const editor of this._editors) {
             const dir = Gio.File.new_for_path(editor.workspacePath);
@@ -589,8 +598,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
                         return;
                     }
                 }
-                // Previously, an undefined callback was called here. Removed callback invocation.
-                // Workspaces are added internally via this._workspaces in _iterateWorkspaceDir.
             });
 
             const sortedWorkspaces = Array.from(this._workspaces).sort((a, b) => {
@@ -734,8 +741,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
                     }
                 }
             );
-            this._workspaces.clear();
-            this._recentWorkspaces?.clear();
+
+            this._cleanup();
 
             this._refresh();
         } catch (e) {
@@ -744,9 +751,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     private _quit() {
-        if (this._indicator) {
-            this._indicator.destroy();
-        }
+        this._log('Quitting VSCode Workspaces Extension');
+        this.disable();
     }
 
     private _startRefresh() {
@@ -775,6 +781,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
             return;
         }
 
-        console.log(`[${this.metadata.name}]: ${message}`);
+        console.log(gettext(`[${this.metadata.name}]: ${message}`));
     }
 }
