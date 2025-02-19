@@ -383,7 +383,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
                 // Favorite toggle button
                 const starIcon = new St.Icon({
-                    icon_name: this._favorites.has(workspace.path) ? 'starred-symbolic' : 'star-symbolic',
+                    icon_name: this._favorites.has(workspace.path) ? 'tag-outline-symbolic' : 'tag-outline-add-symbolic',
                     style_class: 'favorite-icon',
                 });
                 const starButton = new St.Button({
@@ -444,7 +444,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             // Favorite toggle button
             const starIcon = new St.Icon({
-                icon_name: this._favorites.has(workspace.path) ? 'starred-symbolic' : 'star-symbolic',
+                icon_name: this._favorites.has(workspace.path) ? 'tag-outline-symbolic' : 'tag-outline-add-symbolic',
                 style_class: 'favorite-icon',
             });
             const starButton = new St.Button({
@@ -479,6 +479,21 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             item.connect('activate', () => {
                 this._openWorkspace(workspace.path);
+            });
+
+            let tooltip: St.Widget | null = null;
+            item.actor.connect('enter-event', () => {
+                tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
+                const [x, y] = item.actor.get_transformed_position();
+                const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
+                tooltip.set_position(x - Math.floor(natWidth / 2), y);
+                Main.layoutManager.addChrome(tooltip);
+            });
+            item.actor.connect('leave-event', () => {
+                if (tooltip) {
+                    Main.layoutManager.removeChrome(tooltip);
+                    tooltip = null;
+                }
             });
 
             recentsMenu.addMenuItem(item);
