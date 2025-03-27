@@ -69,8 +69,13 @@ export default class VSCodeWorkspacesExtension extends Extension {
             binary: 'code-insiders',
             workspacePath: GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']),
         },
+        {
+            name: 'cursor',
+            binary: 'cursor',
+            workspacePath: GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']),
+        },
     ];
-    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders'];
+    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders', 'cursor'];
     private _menuUpdating: boolean = false;
     private _cleanupOrphanedWorkspaces: boolean = false;
     private _nofailList: string[] = [];
@@ -147,11 +152,15 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._workspaces.clear();
         this._recentWorkspaces.clear();
         this._favorites.clear();
+        this._foundEditors = []; // Clear found editors to prevent duplicates
         this._log(`VSCode Workspaces Extension cleaned up`);
     }
 
     private _initializeWorkspaces() {
         this._log('Initializing workspaces');
+
+        // Clear existing found editors to prevent duplicates
+        this._foundEditors = [];
 
         for (const editor of this._editors) {
             const dir = Gio.File.new_for_path(editor.workspacePath);
@@ -847,7 +856,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     private _refresh() {
-        this._getRecentWorkspaces();
+        // Reinitialize editors to avoid duplicates
+        this._initializeWorkspaces();
+        // The _getRecentWorkspaces() is called inside _initializeWorkspaces() already
         this._createMenu();
     }
 

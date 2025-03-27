@@ -1,0 +1,66 @@
+---
+description: Global Project Rules
+globs: 
+---
+# Project Rules
+
+ALWAYS UPDATE MEMORY BANK AS YOU WORK. 
+
+ALWAYS CHECK MEMORY BANK STATUS BEFORE STARTING A NEW TASK.
+
+## Project Patterns
+
+### Code Organization
+1. All new code should follow the hexagonal architecture pattern
+
+### Naming Conventions
+1. Use descriptive, full words for names
+
+### Configuration
+1. Use JSON format for configuration files
+2. Support environment variable overrides
+
+### Development Workflow
+1. Use make commands for common tasks
+2. Run make dev for development
+3. Use make test for testing
+4. Clean with make clean
+
+### Testing
+1. Write unit tests for all new code
+2. Include integration tests for adapters
+3. Use table-driven tests where appropriate
+4. Mock external dependencies
+
+## Project Intelligence
+
+### User Preferences
+1. Configuration via JSON files
+2. Command-line interface primary interaction
+3. Minimal manual intervention needed
+4. Clear error messages and logging
+
+## Project-Specific Rules
+
+### Code Style
+2. Follow TS best practices
+3. Document all exported items
+4. Keep functions focused and small
+
+### Architecture Rules
+1. Maintain clean interface boundaries
+2. Use dependency injection
+3. Keep core domain pure
+4. Abstract external dependencies
+
+### Security Rules
+1. Never commit credentials
+2. Use environment variables for secrets
+3. Validate all external input
+4. Use TLS for all API connections
+
+### Performance Rules
+1. Implement rate limiting
+2. Use connection pooling
+3. Cache frequently accessed data
+4. Batch operations where possible 

@@ -1,0 +1,8 @@
+---
+description: Rules for how to handle Placeholders
+globs: 
+---
+# FireDragon Placeholder Rules
+
+- All unimplemented placeholder comments MUST be prefixed with a `TODO:`
+- Keep track of ALL placeholders & TODO sections, with a summary, in [placeholder.md](mdc:gnome-extension/gnome-extension/Client/Source/Source/Source/memory-bank/placeholder.md) 
