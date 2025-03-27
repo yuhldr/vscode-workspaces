@@ -91,7 +91,7 @@ Navigate to your desired directory and execute following commands in the termina
 git clone https://github.com/ZanzyTHEbar/vscode-workspaces.git
 cd vscode-workspaces/gnome-extension
 
-make && make pack && make install
+make && make install
 ```
 
 You can run `make help` to see all available commands.
