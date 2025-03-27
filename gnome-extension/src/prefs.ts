@@ -5,8 +5,13 @@ import {
     ExtensionPreferences,
     gettext as _,
 } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import GLib from 'gi://GLib';
 
 export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
+    // Define the _saveSettings method as a class property with initial empty implementation
+    private _saveSettings: (settings: Gio.Settings, changedSettings?: Set<string>) => void =
+        () => { /* Default empty implementation */ };
+
     fillPreferencesWindow(window: Adw.PreferencesWindow) {
         const _settings = this.getSettings();
         const settingsChanged = new Set<string>(); // Track which settings have changed
@@ -256,13 +261,52 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             Gio.SettingsBindFlags.DEFAULT
         );
 
-        // Fix: Bind to the entry widget directly
-        _settings.bind(
-            'nofail-workspaces',
-            nofailEntryWidget,
-            'text',
-            Gio.SettingsBindFlags.DEFAULT
-        );
+        // Fix issue with nofail-workspaces binding (text entry vs array of strings)
+        // First, initialize the entry with comma-separated string from the array
+        const nofailArray = _settings.get_strv('nofail-workspaces') || [];
+        const nofailString = nofailArray.join(', ');
+        nofailEntryWidget.set_text(nofailString);
+
+        // Track changes to the text field
+        nofailEntryWidget.connect('changed', () => {
+            settingsChanged.add('nofail-workspaces');
+        });
+
+        // Do NOT bind directly since the types are incompatible
+        // Instead of using the standard binding, we'll manually handle the saving
+
+        // Modify the save function to properly handle the array conversion
+        this._saveSettings = (settings: Gio.Settings, changedSettings?: Set<string>): void => {
+            // Log which settings were changed
+            if (changedSettings && changedSettings.size > 0 && settings.get_boolean('debug')) {
+                console.log(`VSCode Workspaces: Saving changed settings: ${[...changedSettings].join(', ')}`);
+            }
+
+            // First apply all regular bound settings via the bindings
+            settings.apply();
+
+            // Special handling for nofail-workspaces (convert text to string array)
+            if (changedSettings?.has('nofail-workspaces') || true) {
+                const text = nofailEntryWidget.get_text() || '';
+                const values = text.split(',')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+
+                settings.set_strv('nofail-workspaces', values);
+
+                if (settings.get_boolean('debug')) {
+                    console.log(`VSCode Workspaces: Saved nofail-workspaces as array: [${values.join(', ')}]`);
+                }
+            }
+
+            // Force a sync to ensure settings are written to disk
+            Gio.Settings.sync();
+
+            // Log that settings were saved (if debug is enabled)
+            if (settings.get_boolean('debug')) {
+                console.log('VSCode Workspaces: Settings saved');
+            }
+        };
 
         // Bind custom icon setting
         _settings.bind(
@@ -281,40 +325,37 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         if (headerbar instanceof Adw.HeaderBar) {
             const saveButton = new Gtk.Button({
                 label: _('Save'),
-                css_classes: ['suggested-action'],
+                css_classes: ['suggested-action', 'pill', 'text-button'],
+                margin_top: 8,
+                margin_bottom: 8,
+                margin_end: 8,
                 valign: Gtk.Align.CENTER,
+                visible: true,
             });
 
             saveButton.connect('clicked', () => {
                 this._saveSettings(_settings, settingsChanged);
                 settingsChanged.clear(); // Clear the changes after saving
+
+                // Add feedback to indicate saved state
+                const originalLabel = saveButton.get_label() || _('Save');
+                saveButton.set_label(_('Saved!'));
+                // Reset label after a short delay
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                    saveButton.set_label(originalLabel);
+                    return GLib.SOURCE_REMOVE;
+                });
             });
 
             headerbar.pack_end(saveButton);
+
+            // Force redraw to ensure button is visible
+            headerbar.queue_resize();
         }
 
         // Ensure settings are saved when the window is closed
         window.connect('close-request', () => {
             this._saveSettings(_settings, settingsChanged);
         });
-    }
-
-    // Updated method to explicitly save settings
-    private _saveSettings(settings: Gio.Settings, changedSettings?: Set<string>): void {
-        // Log which settings were changed
-        if (changedSettings && changedSettings.size > 0 && settings.get_boolean('debug')) {
-            console.log(`VSCode Workspaces: Saving changed settings: ${[...changedSettings].join(', ')}`);
-        }
-
-        // First apply all settings via the bindings
-        settings.apply();
-
-        // Force a sync to ensure settings are written to disk
-        Gio.Settings.sync();
-
-        // Log that settings were saved (if debug is enabled)
-        if (settings.get_boolean('debug')) {
-            console.log('VSCode Workspaces: Settings saved');
-        }
     }
 }
