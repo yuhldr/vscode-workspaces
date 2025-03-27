@@ -19,6 +19,7 @@ interface Workspace {
     storeDir: Gio.File | null;
     nofail?: boolean;
     remote?: boolean; // true if workspace is remote (vscode-remote:// or docker://)
+    lastAccessed?: number; // Timestamp when workspace was last accessed
 }
 
 interface RecentWorkspace {
@@ -75,12 +76,16 @@ export default class VSCodeWorkspacesExtension extends Extension {
             workspacePath: GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']),
         },
     ];
-    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders', 'cursor'];
+    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders'];
     private _menuUpdating: boolean = false;
     private _cleanupOrphanedWorkspaces: boolean = false;
     private _nofailList: string[] = [];
     private _customCmdArgs: string = '';
     private _favorites: Set<string> = new Set();
+    private _lastUserInteraction: number = 0;
+    private _currentRefreshInterval: number = 30;
+    private _maxRefreshInterval: number = 300; // 5 minutes
+    private _minRefreshInterval: number = 30; // 30 seconds
 
     enable() {
         this.gsettings = this.getSettings();
@@ -250,20 +255,50 @@ export default class VSCodeWorkspacesExtension extends Extension {
     private _createMenu() {
         if (!this._indicator) return;
 
+        // Record user interaction when menu is opened
+        this._recordUserInteraction();
+
         // If a menu update is in progress, skip this invocation
         if (this._menuUpdating) {
             this._log('Menu update skipped due to concurrent update');
             return;
         }
+
+        // If menu is open, defer update until it's closed
+        if (this._indicator.menu instanceof PopupMenu.PopupMenu && this._indicator.menu.isOpen) {
+            this._log('Menu is open, deferring update');
+
+            // Set up a one-time handler to rebuild menu when closed
+            const openStateChangedId = (this._indicator.menu as any).connect('open-state-changed',
+                (menu: any, isOpen: boolean) => {
+                    if (!isOpen) {
+                        this._log('Menu closed, performing deferred update');
+                        // Disconnect the handler to avoid memory leaks
+                        if (this._indicator && this._indicator.menu) {
+                            (this._indicator.menu as any).disconnect(openStateChangedId);
+                        }
+                        // Schedule menu rebuild for next cycle to avoid UI glitches
+                        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                            this._buildMenu();
+                            return GLib.SOURCE_REMOVE;
+                        });
+                    }
+                });
+            return;
+        }
+
+        this._buildMenu();
+    }
+
+    private _buildMenu() {
+        if (!this._indicator) return;
+
         this._menuUpdating = true;
 
         try {
-            if (this._indicator.menu instanceof PopupMenu.PopupMenu && this._indicator.menu.isOpen) {
-                this._indicator.menu.close(true);
-            }
-
             (this._indicator.menu as PopupMenu.PopupMenu).removeAll();
 
+            // Create menu sections more efficiently
             this._createRecentWorkspacesMenu();
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -277,7 +312,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
             const itemRefresh = new PopupMenu.PopupMenuItem('Refresh');
             itemRefresh.connect('activate', () => {
-                this._refresh();
+                this._refresh(true); // Force full refresh when user requests it
             });
 
             itemSettings.menu.addMenuItem(itemClearWorkspaces);
@@ -287,27 +322,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
             if (this._foundEditors.length > 1) {
-                const editorSelector = new PopupMenu.PopupSubMenuMenuItem('Select Editor');
-
-                this._foundEditors.forEach(editor => {
-                    const item = new PopupMenu.PopupMenuItem(editor.name);
-                    const isActive = this._activeEditor?.binary === editor.binary;
-
-                    if (isActive) {
-                        item.setOrnament(PopupMenu.Ornament.DOT);
-                    }
-
-                    item.connect('activate', () => {
-                        this._editorLocation = editor.binary;
-                        this.gsettings?.set_string('editor-location', editor.binary);
-                        this._setActiveEditor();
-                        this._refresh();
-                    });
-
-                    editorSelector.menu.addMenuItem(item);
-                });
-
-                (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
+                this._createEditorSelector();
             }
 
             const itemQuit = new PopupMenu.PopupMenuItem('Quit');
@@ -316,11 +331,39 @@ export default class VSCodeWorkspacesExtension extends Extension {
             });
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemQuit);
         } finally {
             this._menuUpdating = false;
         }
+    }
+
+    private _createEditorSelector() {
+        if (!this._indicator) return;
+
+        const editorSelector = new PopupMenu.PopupSubMenuMenuItem('Select Editor');
+
+        this._foundEditors.forEach(editor => {
+            const item = new PopupMenu.PopupMenuItem(editor.name);
+            const isActive = this._activeEditor?.binary === editor.binary;
+
+            if (isActive) {
+                item.setOrnament(PopupMenu.Ornament.DOT);
+            }
+
+            item.connect('activate', () => {
+                // Record user interaction
+                this._recordUserInteraction();
+
+                this._editorLocation = editor.binary;
+                this.gsettings?.set_string('editor-location', editor.binary);
+                this._setActiveEditor();
+                this._refresh(true); // Force full refresh when changing editors
+            });
+
+            editorSelector.menu.addMenuItem(item);
+        });
+
+        (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(editorSelector);
     }
 
     private _get_name(workspace: RecentWorkspace) {
@@ -559,6 +602,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         }
     }
 
+    // Kept this function for reference: No longer used.
     private _iterateWorkspaceDir(dir: Gio.File, callback: (workspace: Workspace) => void) {
         let enumerator: Gio.FileEnumerator | null = null;
         try {
@@ -650,53 +694,205 @@ export default class VSCodeWorkspacesExtension extends Extension {
         try {
             const activeEditorPath = this._activeEditor?.workspacePath;
             if (!activeEditorPath) return;
+
             const dir = Gio.File.new_for_path(activeEditorPath);
-            this._iterateWorkspaceDir(dir, (workspace: Workspace) => {
-                // Log preference and, if preferring, perform .code-workspace check
-                if (!this._preferCodeWorkspaceFile) {
-                    this._log(`Not preferring code-workspace file for ${workspace.uri}`);
-                } else {
-                    const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
-                    if (pathToWorkspace.query_file_type(Gio.FileQueryInfoFlags.NONE, null) !== Gio.FileType.DIRECTORY) {
-                        this._log(`Not a directory: ${pathToWorkspace.get_path()}`);
-                        return;
-                    }
-                    const enumerator = pathToWorkspace.enumerate_children('standard::*,unix::uid', Gio.FileQueryInfoFlags.NONE, null);
-                    let info: Gio.FileInfo | null;
-                    let workspaceFilePath: string | null = null;
-                    while ((info = enumerator.next_file(null)) !== null) {
-                        const file = enumerator.get_child(info);
-                        if (file.get_basename()?.endsWith('.code-workspace')) {
-                            workspaceFilePath = file.get_path();
-                            break;
-                        }
-                    }
-                    if (!enumerator.close(null)) {
-                        throw new Error('Failed to close enumerator');
-                    }
-                    this._log(`Checked for .code-workspace: ${workspaceFilePath}`);
-                    if (!workspaceFilePath) return;
-                    const workspaceFile = Gio.File.new_for_path(workspaceFilePath);
-                    if (!workspaceFile.query_exists(null)) {
-                        this._log(`.code-workspace file does not exist in ${workspace.uri}`);
-                        return;
-                    }
-                }
-            });
+            if (!dir.query_exists(null)) {
+                this._log(`Workspace directory does not exist: ${activeEditorPath}`);
+                return;
+            }
 
-            const sortedWorkspaces = Array.from(this._workspaces).sort((a, b) => {
-                const aInfo = Gio.File.new_for_uri(a.uri).query_info('unix::atime', Gio.FileQueryInfoFlags.NONE, null);
-                const bInfo = Gio.File.new_for_uri(b.uri).query_info('unix::atime', Gio.FileQueryInfoFlags.NONE, null);
-                const aAtime = aInfo ? aInfo.get_attribute_uint64('unix::atime') : 0;
-                const bAtime = bInfo ? bInfo.get_attribute_uint64('unix::atime') : 0;
-                return bAtime - aAtime;
-            });
-
-            this._log(`[Workspace Cache]: ${sortedWorkspaces.map(ws => ws.uri)}`);
-            this._recentWorkspaces = new Set(sortedWorkspaces.map(ws => this._createRecentWorkspaceEntry(ws)));
-            this._log(`[Recent Workspaces]: ${Array.from(this._recentWorkspaces).map(rw => rw.path)}`);
+            // Process workspace directory in batches to avoid UI blocking
+            this._processBatchedWorkspaces(dir, 0);
         } catch (e) {
             console.error(e as object, 'Failed to load recent workspaces');
+        }
+    }
+
+    private _processBatchedWorkspaces(dir: Gio.File, startIndex: number, batchSize: number = 10) {
+        // Use GLib.idle_add to avoid blocking the UI thread
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            try {
+                this._log(`Processing workspace batch starting at index ${startIndex}`);
+                let enumerator: Gio.FileEnumerator | null = null;
+                let processedInBatch = 0;
+                let hasMoreItems = false;
+
+                try {
+                    enumerator = dir.enumerate_children('standard::*,unix::uid', Gio.FileQueryInfoFlags.NONE, null);
+
+                    // Skip to the start index
+                    let skipped = 0;
+                    let info: Gio.FileInfo | null;
+                    while (skipped < startIndex && (info = enumerator.next_file(null)) !== null) {
+                        skipped++;
+                    }
+
+                    // Process this batch
+                    while (processedInBatch < batchSize && (info = enumerator.next_file(null)) !== null) {
+                        const workspaceStoreDir = enumerator.get_child(info);
+                        this._log(`Checking ${workspaceStoreDir.get_path()}`);
+                        const workspace = this._parseWorkspaceJson(workspaceStoreDir);
+
+                        if (workspace) {
+                            this._maybeUpdateWorkspaceNoFail(workspace);
+                            this._processWorkspace(workspace);
+                        }
+
+                        processedInBatch++;
+                    }
+
+                    // Check if there are more items to process
+                    hasMoreItems = enumerator.next_file(null) !== null;
+
+                } finally {
+                    if (enumerator) {
+                        enumerator.close(null);
+                    }
+                }
+
+                if (hasMoreItems) {
+                    // Schedule the next batch
+                    this._log(`Scheduling next batch starting at index ${startIndex + processedInBatch}`);
+                    this._processBatchedWorkspaces(dir, startIndex + processedInBatch, batchSize);
+                } else {
+                    // All batches processed, finish up
+                    this._log('All workspaces processed');
+                    this._finalizeWorkspaceProcessing();
+                }
+
+            } catch (error) {
+                console.error(error as object, 'Error processing workspace batch');
+                // Still finalize to ensure UI is updated
+                this._finalizeWorkspaceProcessing();
+            }
+
+            // Return false to not repeat this idle callback
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    private _processWorkspace(workspace: Workspace) {
+        const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
+        if (!pathToWorkspace.query_exists(null)) {
+            this._log(`Workspace not found: ${pathToWorkspace.get_path()}`);
+            if (this._cleanupOrphanedWorkspaces && !workspace.nofail) {
+                this._log(`Workspace will be removed: ${pathToWorkspace.get_path()}`);
+                this._workspaces.delete(workspace);
+                const trashRes = workspace.storeDir?.trash(null);
+                if (!trashRes) {
+                    this._log(`Failed to move workspace to trash: ${workspace.uri}`);
+                } else {
+                    this._log(`Workspace trashed: ${workspace.uri}`);
+                }
+            } else {
+                this._log(`Skipping removal for workspace: ${workspace.uri} (cleanup enabled: ${this._cleanupOrphanedWorkspaces}, nofail: ${workspace.nofail})`);
+            }
+            return;
+        }
+
+        // Check for .code-workspace files if preferred
+        if (this._preferCodeWorkspaceFile) {
+            this._maybePreferWorkspaceFile(workspace);
+        }
+
+        // Skip if already in the workspaces set
+        if ([...this._workspaces].some(ws => ws.uri === workspace.uri)) {
+            this._log(`Workspace already exists: ${workspace.uri}`);
+            return;
+        }
+
+        // Set initial access timestamp
+        workspace.lastAccessed = Date.now();
+        this._workspaces.add(workspace);
+    }
+
+    private _maybePreferWorkspaceFile(workspace: Workspace) {
+        const pathToWorkspace = Gio.File.new_for_uri(workspace.uri);
+        if (pathToWorkspace.query_file_type(Gio.FileQueryInfoFlags.NONE, null) !== Gio.FileType.DIRECTORY) {
+            this._log(`Not a directory: ${pathToWorkspace.get_path()}`);
+            return;
+        }
+
+        try {
+            const enumerator = pathToWorkspace.enumerate_children('standard::*,unix::uid', Gio.FileQueryInfoFlags.NONE, null);
+            let info: Gio.FileInfo | null;
+            let workspaceFilePath: string | null = null;
+
+            while ((info = enumerator.next_file(null)) !== null) {
+                const file = enumerator.get_child(info);
+                if (file.get_basename()?.endsWith('.code-workspace')) {
+                    workspaceFilePath = file.get_path();
+                    break;
+                }
+            }
+
+            enumerator.close(null);
+
+            this._log(`Checked for .code-workspace: ${workspaceFilePath}`);
+            if (workspaceFilePath) {
+                const workspaceFile = Gio.File.new_for_path(workspaceFilePath);
+                if (workspaceFile.query_exists(null)) {
+                    // Update workspace URI to point to the .code-workspace file
+                    workspace.uri = `file://${workspaceFilePath}`;
+                    this._log(`Updated workspace URI to use .code-workspace file: ${workspace.uri}`);
+                }
+            }
+        } catch (error) {
+            console.error(error as object, 'Error checking for workspace file');
+        }
+    }
+
+    private _finalizeWorkspaceProcessing() {
+        try {
+            // Check if we need to clean up the cache
+            this._performCacheCleanup();
+
+            // Sort workspaces by access time - now using the lastAccessed property
+            const sortedWorkspaces = Array.from(this._workspaces).sort((a, b) => {
+                const aTime = a.lastAccessed || 0;
+                const bTime = b.lastAccessed || 0;
+                return bTime - aTime;
+            });
+
+            this._log(`[Workspace Cache]: ${sortedWorkspaces.length} workspaces`);
+
+            // Limit the number of workspaces to avoid memory bloat
+            const maxWorkspaces = 50; // Reasonable limit to prevent excessive memory usage
+            const limitedWorkspaces = sortedWorkspaces.slice(0, maxWorkspaces);
+
+            this._recentWorkspaces = new Set(limitedWorkspaces.map(ws => this._createRecentWorkspaceEntry(ws)));
+            this._log(`[Recent Workspaces]: ${this._recentWorkspaces.size} entries`);
+
+            // Update the menu with the new workspaces
+            this._createMenu();
+        } catch (error) {
+            console.error(error as object, 'Error finalizing workspace processing');
+        }
+    }
+
+    private _performCacheCleanup() {
+        const now = Date.now();
+        const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+        const maxCacheSize = 100; // Maximum number of workspaces to keep in memory
+
+        // If cache is getting too large, clean up old entries
+        if (this._workspaces.size > maxCacheSize) {
+            this._log(`Cache size (${this._workspaces.size}) exceeds maximum (${maxCacheSize}), cleaning up old entries`);
+
+            // Identify old workspaces
+            const oldWorkspaces = Array.from(this._workspaces).filter(workspace => {
+                const lastAccessed = workspace.lastAccessed || 0;
+                return (now - lastAccessed) > maxAge;
+            });
+
+            if (oldWorkspaces.length > 0) {
+                this._log(`Removing ${oldWorkspaces.length} workspaces from cache that haven't been accessed in 30 days`);
+
+                // Remove old workspaces from the cache
+                oldWorkspaces.forEach(workspace => {
+                    this._workspaces.delete(workspace);
+                });
+            }
         }
     }
 
@@ -752,6 +948,16 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _openWorkspace(workspacePath: string) {
         this._log(`Opening workspace: ${workspacePath}`);
+        // Record user interaction when opening a workspace
+        this._recordUserInteraction();
+
+        // Update access timestamp for the workspace
+        const workspace = Array.from(this._workspaces).find(w => w.uri === workspacePath);
+        if (workspace) {
+            workspace.lastAccessed = Date.now();
+            this._log(`Updated lastAccessed timestamp for ${workspacePath}`);
+        }
+
         this._launchVSCode([workspacePath]);
     }
 
@@ -844,22 +1050,101 @@ export default class VSCodeWorkspacesExtension extends Extension {
             GLib.source_remove(this._refreshTimeout);
             this._refreshTimeout = null;
         }
+
+        // Reset to minimum interval when user explicitly starts a refresh
+        this._currentRefreshInterval = this._minRefreshInterval;
+
+        // Initial full refresh
+        this._refresh(true);
+
+        // Set up adaptive refresh cycle
+        this._setupAdaptiveRefresh();
+    }
+
+    private _setupAdaptiveRefresh() {
+        const refreshFunc = () => {
+            // Adapt interval based on user activity
+            this._updateRefreshInterval();
+
+            // Use lightweight refresh for timer-based updates
+            this._refresh(false);
+
+            // Schedule next refresh with updated interval
+            this._refreshTimeout = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT,
+                this._currentRefreshInterval,
+                refreshFunc
+            );
+
+            // Return false to not repeat this specific timeout
+            return GLib.SOURCE_REMOVE;
+        };
+
+        // Start the refresh cycle
         this._refreshTimeout = GLib.timeout_add_seconds(
             GLib.PRIORITY_DEFAULT,
-            this._refreshInterval,
-            () => {
-                // Load recent workspaces
-                this._refresh();
-                return GLib.SOURCE_CONTINUE;
-            }
+            this._currentRefreshInterval,
+            refreshFunc
         );
     }
 
-    private _refresh() {
-        // Reinitialize editors to avoid duplicates
-        this._initializeWorkspaces();
-        // The _getRecentWorkspaces() is called inside _initializeWorkspaces() already
+    private _updateRefreshInterval() {
+        const now = Date.now();
+        const userActiveThreshold = 5 * 60 * 1000; // 5 minutes
+
+        // If user has been active recently, use shorter interval
+        if (this._lastUserInteraction > 0 && (now - this._lastUserInteraction < userActiveThreshold)) {
+            this._currentRefreshInterval = this._minRefreshInterval;
+            this._log(`User recently active, using minimum refresh interval: ${this._currentRefreshInterval}s`);
+        } else {
+            // Gradually increase interval up to max
+            this._currentRefreshInterval = Math.min(
+                Math.round(this._currentRefreshInterval * 1.5),
+                this._maxRefreshInterval
+            );
+            this._log(`User inactive, increased refresh interval to: ${this._currentRefreshInterval}s`);
+        }
+    }
+
+    private _recordUserInteraction() {
+        this._lastUserInteraction = Date.now();
+        // Immediately reset to faster refresh rate when user interacts
+        if (this._currentRefreshInterval > this._minRefreshInterval) {
+            this._log('User interaction detected, resetting to minimum refresh interval');
+            this._currentRefreshInterval = this._minRefreshInterval;
+
+            // Restart refresh cycle with new interval
+            if (this._refreshTimeout) {
+                GLib.source_remove(this._refreshTimeout);
+                this._refreshTimeout = null;
+                this._setupAdaptiveRefresh();
+            }
+        }
+    }
+
+    private _refresh(forceFullRefresh = false) {
+        this._log(`Refreshing workspaces (full refresh: ${forceFullRefresh})`);
+
+        if (forceFullRefresh) {
+            // Full refresh reinitializes everything
+            this._initializeWorkspaces();
+        } else {
+            // Lightweight refresh - only update workspaces for current editor
+            this._lightweightRefresh();
+        }
         this._createMenu();
+    }
+
+    private _lightweightRefresh() {
+        // Only refresh workspaces without reinitializing editors
+        if (!this._activeEditor) {
+            this._log('No active editor found for lightweight refresh');
+            return;
+        }
+
+        // Keep existing editors, just update workspaces
+        this._log(`Performing lightweight refresh for ${this._activeEditor.name}`);
+        this._getRecentWorkspaces();
     }
 
     private _log(message: any): void {
@@ -871,6 +1156,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
     }
 
     private _toggleFavorite(workspace: RecentWorkspace) {
+        // Record user interaction when toggling favorites
+        this._recordUserInteraction();
+
         if (this._favorites.has(workspace.path)) {
             this._favorites.delete(workspace.path);
             this._log(`Removed favorite: ${workspace.path}`);
