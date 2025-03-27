@@ -1363,7 +1363,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _refresh(forceFullRefresh = false) {
         this._log(`Refreshing workspaces (full refresh: ${forceFullRefresh})`);
+        this._persistSettings();
 
+        // Check if we need to force a full refresh
         if (forceFullRefresh) {
             // Full refresh reinitializes everything
             this._initializeWorkspaces();
@@ -1371,6 +1373,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
             // Lightweight refresh - only update workspaces for current editor
             this._lightweightRefresh();
         }
+
+
         this._createMenu();
     }
 

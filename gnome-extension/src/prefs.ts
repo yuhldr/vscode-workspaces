@@ -9,6 +9,19 @@ import {
 export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window: Adw.PreferencesWindow) {
         const _settings = this.getSettings();
+        const settingsChanged = new Set<string>(); // Track which settings have changed
+
+        // Get current editor location value
+        const currentEditorLocation = _settings.get_string('editor-location') || 'auto';
+
+        // Debug: Log initial settings values
+        if (_settings.get_boolean('debug')) {
+            console.log('VSCode Workspaces: Initial settings values:');
+            console.log(`- editor-location: ${currentEditorLocation}`);
+            console.log(`- new-window: ${_settings.get_boolean('new-window')}`);
+            console.log(`- custom-cmd-args: ${_settings.get_string('custom-cmd-args')}`);
+            console.log(`- custom-icon: ${_settings.get_string('custom-icon')}`);
+        }
 
         const page = new Adw.PreferencesPage({
             title: _('General'),
@@ -34,15 +47,25 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             description: _('Configure various settings for interacting with editor'),
         });
 
+        const editorLocationEntry = new Gtk.Entry({
+            placeholder_text: currentEditorLocation, // Use current value as placeholder
+            text: currentEditorLocation, // Set initial text to current value
+        });
+
+        const editorLocationHintRow = new Adw.ActionRow({
+            title: _('editor Location Hint'),
+            subtitle: _('Use "auto", a binary name (e.g., "code", "cursor"), or a full path'),
+            activatable: false,
+        });
+
         const editorLocation = new Adw.EntryRow({
             title: _('editor Location'),
             showApplyButton: true,
             inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
-            child: new Gtk.Entry({
-                placeholder_text: _('Use "auto", a binary name (e.g., "code", "cursor"), or a full path'),
-            })
+            child: editorLocationEntry
         });
+
 
         const debug = new Adw.SwitchRow({
             title: _('Debug'),
@@ -64,6 +87,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             })
         });
 
+        editorGroup.add(editorLocationHintRow);
         editorGroup.add(editorLocation);
         editorGroup.add(preferWorkspaceFile);
         editorGroup.add(debug);
@@ -139,6 +163,46 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
 
         page.add(cleanupGroup);
 
+        // Set up change tracking for editorLocation
+        editorLocationEntry.connect('changed', () => {
+            settingsChanged.add('editor-location');
+        });
+
+        // Set up change tracking for other settings
+        const setupChangeTracking = (widget: Gtk.Widget, settingKey: string) => {
+            if (widget instanceof Gtk.Entry) {
+                widget.connect('changed', () => {
+                    settingsChanged.add(settingKey);
+                });
+            } else if (widget instanceof Gtk.Switch) {
+                widget.connect('notify::active', () => {
+                    settingsChanged.add(settingKey);
+                });
+            } else if (widget instanceof Gtk.SpinButton) {
+                widget.connect('value-changed', () => {
+                    settingsChanged.add(settingKey);
+                });
+            }
+        };
+
+        // Track changes for various settings
+        setupChangeTracking(editorLocationEntry, 'editor-location');
+        setupChangeTracking(refreshGroupEntry, 'refresh-interval');
+
+        // Track changes for switch controls
+        setupChangeTracking(newWindowSwitch, 'new-window');
+        setupChangeTracking(debug, 'debug');
+        setupChangeTracking(preferWorkspaceFile, 'prefer-workspace-file');
+        setupChangeTracking(cleanupSwitch, 'cleanup-orphaned-workspaces');
+
+        // Track changes for entry rows - ensure we track the actual entry widgets
+        const customCmdArgsEntry = customCmdArgs.child as Gtk.Entry;
+        const customIconEntryWidget = customIconEntry.child as Gtk.Entry;
+        const nofailEntryWidget = nofailEntry.child as Gtk.Entry;
+        setupChangeTracking(customCmdArgsEntry, 'custom-cmd-args');
+        setupChangeTracking(customIconEntryWidget, 'custom-icon');
+        setupChangeTracking(nofailEntryWidget, 'nofail-workspaces');
+
         // Bind settings
         _settings.bind(
             'new-window',
@@ -146,9 +210,11 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             'active',
             Gio.SettingsBindFlags.DEFAULT
         );
+
+        // Fix: Bind to the entry widget directly instead of the EntryRow
         _settings.bind(
             'editor-location',
-            editorLocation,
+            editorLocationEntry,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
@@ -174,9 +240,10 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             Gio.SettingsBindFlags.DEFAULT
         );
 
+        // Fix: Bind to the entry widget directly for EntryRows
         _settings.bind(
             'custom-cmd-args',
-            customCmdArgs,
+            customCmdArgsEntry,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
@@ -188,9 +255,11 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             'active',
             Gio.SettingsBindFlags.DEFAULT
         );
+
+        // Fix: Bind to the entry widget directly
         _settings.bind(
             'nofail-workspaces',
-            nofailEntry,
+            nofailEntryWidget,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
@@ -198,7 +267,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         // Bind custom icon setting
         _settings.bind(
             'custom-icon',
-            customIconEntry,
+            customIconEntryWidget,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
@@ -207,8 +276,45 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         // Add the page to the window
         window.add(page);
 
+        // Create a save button to explicitly save settings
+        const headerbar = window.get_titlebar();
+        if (headerbar instanceof Adw.HeaderBar) {
+            const saveButton = new Gtk.Button({
+                label: _('Save'),
+                css_classes: ['suggested-action'],
+                valign: Gtk.Align.CENTER,
+            });
+
+            saveButton.connect('clicked', () => {
+                this._saveSettings(_settings, settingsChanged);
+                settingsChanged.clear(); // Clear the changes after saving
+            });
+
+            headerbar.pack_end(saveButton);
+        }
+
+        // Ensure settings are saved when the window is closed
         window.connect('close-request', () => {
-            _settings.apply();
+            this._saveSettings(_settings, settingsChanged);
         });
+    }
+
+    // Updated method to explicitly save settings
+    private _saveSettings(settings: Gio.Settings, changedSettings?: Set<string>): void {
+        // Log which settings were changed
+        if (changedSettings && changedSettings.size > 0 && settings.get_boolean('debug')) {
+            console.log(`VSCode Workspaces: Saving changed settings: ${[...changedSettings].join(', ')}`);
+        }
+
+        // First apply all settings via the bindings
+        settings.apply();
+
+        // Force a sync to ensure settings are written to disk
+        Gio.Settings.sync();
+
+        // Log that settings were saved (if debug is enabled)
+        if (settings.get_boolean('debug')) {
+            console.log('VSCode Workspaces: Settings saved');
+        }
     }
 }
