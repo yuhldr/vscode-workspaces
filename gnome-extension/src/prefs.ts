@@ -39,6 +39,9 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             showApplyButton: true,
             inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
+            child: new Gtk.Entry({
+                placeholder_text: _('Use "auto", a binary name (e.g., "code", "cursor"), or a full path'),
+            })
         });
 
         const debug = new Adw.SwitchRow({

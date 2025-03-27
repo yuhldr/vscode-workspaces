@@ -76,7 +76,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
             workspacePath: GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']),
         },
     ];
-    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders'];
+    private readonly _iconNames = ['code', 'vscode', 'vscodium', 'codium', 'code-insiders', 'cursor'];
     private _menuUpdating: boolean = false;
     private _cleanupOrphanedWorkspaces: boolean = false;
     private _nofailList: string[] = [];
@@ -196,14 +196,68 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
     private _setActiveEditor() {
         const editorLocation = this._editorLocation;
+
         if (editorLocation === 'auto') {
+            // Auto selection - use default editor or first available
             this._activeEditor = this._foundEditors.find(editor => editor.isDefault) ?? this._foundEditors[0];
         } else {
-            this._activeEditor = this._foundEditors.find(editor => editor.binary === editorLocation) ?? this._foundEditors[0];
-        }
+            // Try to find editor matching the configured binary
+            this._activeEditor = this._foundEditors.find(editor => editor.binary === editorLocation);
 
-        if (!this._activeEditor && this._foundEditors.length > 0) {
-            this._activeEditor = this._foundEditors[0];
+            // If no matching editor was found but user specified a custom path
+            if (!this._activeEditor && editorLocation !== '') {
+                this._log(`No predefined editor found for binary '${editorLocation}', creating custom editor entry`);
+
+                // Determine a reasonable name for the custom editor
+                const customName = editorLocation.includes('/')
+                    ? GLib.path_get_basename(editorLocation)
+                    : editorLocation;
+
+                // Try to guess a workspacePath based on common patterns
+                let customWorkspacePath = '';
+
+                // Check if it might be a custom installation of known editors
+                if (customName.includes('code') || customName.includes('codium')) {
+                    // Assume the storage path follows the standard pattern but in a custom location
+                    if (customName.includes('insiders')) {
+                        customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']);
+                    } else if (customName.includes('codium')) {
+                        customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'VSCodium/User/workspaceStorage']);
+                    } else if (customName.includes('cursor')) {
+                        customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']);
+                    } else {
+                        customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code/User/workspaceStorage']);
+                    }
+                } else {
+                    // For completely unknown editors, use a fallback path
+                    customWorkspacePath = GLib.build_filenamev([this._userConfigDir, `${customName}/User/workspaceStorage`]);
+                }
+
+                // Create a custom editor entry
+                const customEditor: EditorPath = {
+                    name: `custom (${customName})`,
+                    binary: editorLocation,
+                    workspacePath: customWorkspacePath
+                };
+
+                // Check if the workspace path exists
+                const dir = Gio.File.new_for_path(customEditor.workspacePath);
+                if (dir.query_exists(null)) {
+                    this._log(`Found workspace directory for custom editor: ${customEditor.workspacePath}`);
+                    this._foundEditors.push(customEditor);
+                    this._activeEditor = customEditor;
+                } else {
+                    this._log(`Workspace directory not found for custom editor: ${customEditor.workspacePath}`);
+                    this._log(`Please create the directory or adjust your settings.`);
+                    // Still use the custom editor even if workspace path doesn't exist yet
+                    this._activeEditor = customEditor;
+                }
+            }
+
+            // If still no active editor and there are found editors, fall back to first one
+            if (!this._activeEditor && this._foundEditors.length > 0) {
+                this._activeEditor = this._foundEditors[0];
+            }
         }
 
         if (this._activeEditor) {
