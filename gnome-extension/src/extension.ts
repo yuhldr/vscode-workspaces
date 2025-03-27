@@ -86,12 +86,79 @@ export default class VSCodeWorkspacesExtension extends Extension {
     private _currentRefreshInterval: number = 30;
     private _maxRefreshInterval: number = 300; // 5 minutes
     private _minRefreshInterval: number = 30; // 30 seconds
+    private _customIconPath: string = ''; // Path or name for a custom icon
 
     enable() {
         this.gsettings = this.getSettings();
 
         this._indicator = new PanelMenu.Button(0.0, this.metadata.name, false);
 
+        // Set settings first to get the custom icon path
+        this._setSettings();
+
+        // Initialize icon
+        const icon = this._createIcon();
+        this._indicator.add_child(icon);
+
+        Main.panel.addToStatusArea(this.metadata.uuid, this._indicator);
+
+        this.gsettings.connect('changed', () => {
+            // Store old settings for comparison
+            const oldCustomIconPath = this._customIconPath;
+
+            // Update settings
+            this._setSettings();
+
+            // Check if icon setting changed
+            if (oldCustomIconPath !== this._customIconPath) {
+                this._updateIcon();
+            }
+
+            // Start refresh
+            this._startRefresh();
+        });
+
+        this._initializeWorkspaces();
+    }
+
+    private _createIcon(): St.Icon {
+        let icon: St.Icon;
+
+        // Check if custom icon is specified
+        if (this._customIconPath && this._customIconPath.trim() !== '') {
+            const iconPath = this._customIconPath.trim();
+
+            if (GLib.file_test(iconPath, GLib.FileTest.EXISTS) && !GLib.file_test(iconPath, GLib.FileTest.IS_DIR)) {
+                // It's a file path
+                this._log(`Using custom icon file: ${iconPath}`);
+                icon = new St.Icon({
+                    gicon: Gio.icon_new_for_string(iconPath),
+                    style_class: 'system-status-icon',
+                });
+            } else {
+                // Try as a theme icon
+                const iconTheme = St.IconTheme.new();
+                if (iconTheme.has_icon(iconPath)) {
+                    this._log(`Using custom theme icon: ${iconPath}`);
+                    icon = new St.Icon({
+                        icon_name: iconPath,
+                        style_class: 'system-status-icon',
+                    });
+                } else {
+                    // Fallback to default icons
+                    this._log(`Custom icon "${iconPath}" not found, using fallback`);
+                    icon = this._createDefaultIcon();
+                }
+            }
+        } else {
+            // Use default icon if no custom icon is specified
+            icon = this._createDefaultIcon();
+        }
+
+        return icon;
+    }
+
+    private _createDefaultIcon(): St.Icon {
         let iconName = 'code';
         for (const name of this._iconNames) {
             if (this._iconExists(name)) {
@@ -100,21 +167,24 @@ export default class VSCodeWorkspacesExtension extends Extension {
             }
         }
 
-        const icon = new St.Icon({
+        this._log(`Using default icon: ${iconName}`);
+        return new St.Icon({
             icon_name: iconName,
             style_class: 'system-status-icon',
         });
+    }
 
+    private _updateIcon() {
+        if (!this._indicator) return;
+
+        // Remove old icon
+        this._indicator.remove_all_children();
+
+        // Create and add new icon
+        const icon = this._createIcon();
         this._indicator.add_child(icon);
 
-        Main.panel.addToStatusArea(this.metadata.uuid, this._indicator);
-        this._setSettings();
-
-        this.gsettings.connect('changed', () => {
-            this._setSettings();
-            this._startRefresh();
-        });
-        this._initializeWorkspaces();
+        this._log('Icon updated');
     }
 
     disable() {
@@ -141,6 +211,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this.gsettings.set_strv('nofail-workspaces', this._nofailList);
         this.gsettings.set_string('custom-cmd-args', this._customCmdArgs);
         this.gsettings.set_strv('favorite-workspaces', Array.from(this._favorites));
+        this.gsettings.set_string('custom-icon', this._customIconPath);
 
         this.getSettings().set_boolean('new-window', this._newWindow);
         this.getSettings().set_string('editor-location', this._editorLocation);
@@ -201,17 +272,15 @@ export default class VSCodeWorkspacesExtension extends Extension {
             // Auto selection - use default editor or first available
             this._activeEditor = this._foundEditors.find(editor => editor.isDefault) ?? this._foundEditors[0];
         } else {
-            // Try to find editor matching the configured binary
-            this._activeEditor = this._foundEditors.find(editor => editor.binary === editorLocation);
+            // Check if the editor location is a custom path (contains /)
+            const isCustomPath = editorLocation.includes('/');
 
-            // If no matching editor was found but user specified a custom path
-            if (!this._activeEditor && editorLocation !== '') {
-                this._log(`No predefined editor found for binary '${editorLocation}', creating custom editor entry`);
+            if (isCustomPath) {
+                // For custom paths, create a custom editor entry directly
+                this._log(`Using custom editor binary path: ${editorLocation}`);
 
                 // Determine a reasonable name for the custom editor
-                const customName = editorLocation.includes('/')
-                    ? GLib.path_get_basename(editorLocation)
-                    : editorLocation;
+                const customName = GLib.path_get_basename(editorLocation);
 
                 // Try to guess a workspacePath based on common patterns
                 let customWorkspacePath = '';
@@ -244,24 +313,77 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 const dir = Gio.File.new_for_path(customEditor.workspacePath);
                 if (dir.query_exists(null)) {
                     this._log(`Found workspace directory for custom editor: ${customEditor.workspacePath}`);
-                    this._foundEditors.push(customEditor);
-                    this._activeEditor = customEditor;
                 } else {
                     this._log(`Workspace directory not found for custom editor: ${customEditor.workspacePath}`);
                     this._log(`Please create the directory or adjust your settings.`);
-                    // Still use the custom editor even if workspace path doesn't exist yet
-                    this._activeEditor = customEditor;
                 }
-            }
 
-            // If still no active editor and there are found editors, fall back to first one
-            if (!this._activeEditor && this._foundEditors.length > 0) {
-                this._activeEditor = this._foundEditors[0];
+                // Use the custom editor regardless of whether workspace directory exists
+                // This allows using custom binary paths even without workspace directory
+                this._activeEditor = customEditor;
+
+                // Add to found editors if not already present
+                if (!this._foundEditors.some(e => e.binary === customEditor.binary)) {
+                    this._foundEditors.push(customEditor);
+                }
+            } else {
+                // Try to find editor matching the configured binary
+                this._activeEditor = this._foundEditors.find(editor => editor.binary === editorLocation);
+
+                // If no matching editor was found but user specified a binary name
+                if (!this._activeEditor && editorLocation !== '') {
+                    this._log(`No predefined editor found for binary '${editorLocation}', creating custom editor entry`);
+
+                    // Try to guess a workspacePath based on common patterns
+                    let customWorkspacePath = '';
+
+                    // Check if it might be a known editor with a different binary name
+                    if (editorLocation.includes('code') || editorLocation.includes('codium')) {
+                        // Assume the storage path follows the standard pattern
+                        if (editorLocation.includes('insiders')) {
+                            customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']);
+                        } else if (editorLocation.includes('codium')) {
+                            customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'VSCodium/User/workspaceStorage']);
+                        } else if (editorLocation.includes('cursor')) {
+                            customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']);
+                        } else {
+                            customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code/User/workspaceStorage']);
+                        }
+                    } else {
+                        // For completely unknown editors, use a fallback path
+                        customWorkspacePath = GLib.build_filenamev([this._userConfigDir, `${editorLocation}/User/workspaceStorage`]);
+                    }
+
+                    // Create a custom editor entry
+                    const customEditor: EditorPath = {
+                        name: `custom (${editorLocation})`,
+                        binary: editorLocation,
+                        workspacePath: customWorkspacePath
+                    };
+
+                    // Check if the workspace path exists
+                    const dir = Gio.File.new_for_path(customEditor.workspacePath);
+                    if (dir.query_exists(null)) {
+                        this._log(`Found workspace directory for custom editor: ${customEditor.workspacePath}`);
+                        this._foundEditors.push(customEditor);
+                        this._activeEditor = customEditor;
+                    } else {
+                        this._log(`Workspace directory not found for custom editor: ${customEditor.workspacePath}`);
+                        this._log(`Please create the directory or adjust your settings.`);
+                        // Still use the custom editor even if workspace path doesn't exist yet
+                        this._activeEditor = customEditor;
+                    }
+                }
+
+                // If still no active editor and there are found editors, fall back to first one
+                if (!this._activeEditor && this._foundEditors.length > 0) {
+                    this._activeEditor = this._foundEditors[0];
+                }
             }
         }
 
         if (this._activeEditor) {
-            this._log(`Active editor set to: ${this._activeEditor.name}`);
+            this._log(`Active editor set to: ${this._activeEditor.name} (${this._activeEditor.binary})`);
         } else {
             this._log('No editor found!');
         }
@@ -284,6 +406,8 @@ export default class VSCodeWorkspacesExtension extends Extension {
         // Cast the unpacked value to string[] to satisfy the Set constructor
         const favs = (this.gsettings.get_value('favorite-workspaces').deepUnpack() as string[]) ?? [];
         this._favorites = new Set(favs);
+        // Get custom icon path/name
+        this._customIconPath = this.gsettings.get_value('custom-icon').deepUnpack() ?? '';
 
         this._log(`New Window: ${this._newWindow}`);
         this._log(`Workspaces Storage Location: ${this._editorLocation}`);
@@ -294,6 +418,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
         this._log(`No-fail workspaces: ${this._nofailList.join(', ')}`);
         this._log(`Custom CMD Args: ${this._customCmdArgs}`);
         this._log(`Favorite Workspaces: ${Array.from(this._favorites).join(', ')}`);
+        this._log(`Custom Icon Path: ${this._customIconPath}`);
     }
 
     private _iconExists(iconName: string): boolean {
@@ -369,8 +494,15 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 this._refresh(true); // Force full refresh when user requests it
             });
 
+            // Add new item to open extension preferences
+            const itemPreferences = new PopupMenu.PopupMenuItem('Extension Preferences');
+            itemPreferences.connect('activate', () => {
+                this._openExtensionPreferences();
+            });
+
             itemSettings.menu.addMenuItem(itemClearWorkspaces);
             itemSettings.menu.addMenuItem(itemRefresh);
+            itemSettings.menu.addMenuItem(itemPreferences);
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(itemSettings);
 
             (this._indicator.menu as PopupMenu.PopupMenu).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -517,9 +649,6 @@ export default class VSCodeWorkspacesExtension extends Extension {
         container.set_x_expand(true);
         container.add_child(label);
 
-        //const label = new St.Label({ text: this._get_name(workspace) });
-        //item.actor.insert_child_at_index(label, 0);
-
         const starButton = this._createFavoriteButton(workspace);
         const trashButton = this._createTrashButton(workspace);
 
@@ -532,22 +661,46 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._openWorkspace(workspace.path);
         });
 
-        let tooltip: St.Widget | null = null;
+        // Improved tooltip handling to avoid null pointer errors
+        let tooltip: St.Label | null = null;
+
+        // Use the actor.connect to handle enter events properly
         item.actor.connect('enter-event', () => {
-            tooltip = new St.Label({ text: this._get_full_path(workspace), style_class: 'workspace-tooltip' });
+            // Make sure any existing tooltip is removed
+            if (tooltip) {
+                Main.layoutManager.removeChrome(tooltip);
+                tooltip = null;
+            }
+
+            // Create a new tooltip
+            tooltip = new St.Label({
+                text: this._get_full_path(workspace),
+                style_class: 'workspace-tooltip'
+            });
+
+            // Position the tooltip near the item
             const [x, y] = item.actor.get_transformed_position();
-            const [minWidth, natWidth] = tooltip.get_preferred_width(-1);
+            const [, natWidth] = tooltip.get_preferred_width(-1);
             tooltip.set_position(x - Math.floor(natWidth / 1.15), y);
+
+            // Add the tooltip to the stage
             Main.layoutManager.addChrome(tooltip);
+
+            // Add show class for fade-in effect
+            tooltip.add_style_class_name('show');
         });
+
+        // Handle leave events to remove the tooltip
         item.actor.connect('leave-event', () => {
             if (tooltip) {
+                // Remove the tooltip from the stage
                 Main.layoutManager.removeChrome(tooltip);
                 tooltip = null;
             }
         });
 
-        item.actor.connect('destroy', () => {
+        // Ensure tooltip is removed when item is destroyed
+        item.connect('destroy', () => {
             if (tooltip) {
                 Main.layoutManager.removeChrome(tooltip);
                 tooltip = null;
@@ -716,6 +869,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
             path: workspace.uri,
             softRemove: () => {
                 this._log(`Moving Workspace to Trash: ${workspaceName}`);
+
+                // Record user interaction
+                this._recordUserInteraction();
+
                 this._workspaces.delete(workspace);
                 this._recentWorkspaces = new Set(
                     Array.from(this._recentWorkspaces).filter(
@@ -728,10 +885,16 @@ export default class VSCodeWorkspacesExtension extends Extension {
                     return;
                 }
                 this._log(`Workspace Trashed: ${workspaceName}`);
-                this._createMenu();
+
+                // Update the UI immediately without a full refresh
+                this._buildMenu();
             },
             removeWorkspaceItem: () => {
                 this._log(`Removing workspace: ${workspaceName}`);
+
+                // Record user interaction
+                this._recordUserInteraction();
+
                 this._workspaces.delete(workspace);
                 this._recentWorkspaces = new Set(
                     Array.from(this._recentWorkspaces).filter(
@@ -739,7 +902,9 @@ export default class VSCodeWorkspacesExtension extends Extension {
                     )
                 );
                 workspace.storeDir?.delete(null);
-                this._createMenu();
+
+                // Update the UI immediately without a full refresh
+                this._buildMenu();
             },
         };
     }
@@ -953,6 +1118,10 @@ export default class VSCodeWorkspacesExtension extends Extension {
     private _launchVSCode(files: string[]): void {
         this._log(`Launching VSCode with files: ${files.join(', ')}`);
         try {
+            if (!this._activeEditor?.binary) {
+                throw new Error('No active editor binary specified');
+            }
+
             const filePaths: string[] = [];
             const dirPaths: string[] = [];
 
@@ -989,10 +1158,26 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 args.push(this._customCmdArgs.trim());
             }
 
-            let command = this._activeEditor?.binary;
-            if (!command) throw new Error('No active editor found');
+            // Get the binary path from active editor
+            const binaryPath = this._activeEditor.binary;
 
+            // Check if this is a custom path (contains slashes) or just a binary name
+            const isCustomPath = binaryPath.includes('/');
+
+            let command: string;
+            if (isCustomPath) {
+                // For custom paths, use the full path directly
+                command = `"${binaryPath}"`;
+                this._log(`Using custom binary path: ${binaryPath}`);
+            } else {
+                // For standard binary names, use as is
+                command = binaryPath;
+                this._log(`Using standard binary name: ${binaryPath}`);
+            }
+
+            // Add arguments
             command += ` ${args.join(' ')}`;
+
             this._log(`Command to execute: ${command}`);
             GLib.spawn_command_line_async(command);
         } catch (error) {
@@ -1220,7 +1405,27 @@ export default class VSCodeWorkspacesExtension extends Extension {
             this._favorites.add(workspace.path);
             this._log(`Added favorite: ${workspace.path}`);
         }
+
+        // Persist settings
         this._persistSettings();
-        this._refresh();
+
+        // Update UI immediately without a full refresh
+        this._buildMenu();
+    }
+
+    // Add new method to open extension preferences
+    private _openExtensionPreferences(): void {
+        this._log('Opening extension preferences');
+        try {
+            // Record user interaction
+            this._recordUserInteraction();
+
+            // Open extension preferences using the GNOME Extensions app
+            const command = `gnome-extensions prefs ${this.metadata.uuid}`;
+            this._log(`Running command: ${command}`);
+            GLib.spawn_command_line_async(command);
+        } catch (error) {
+            console.error(error as object, 'Failed to open extension preferences');
+        }
     }
 }

@@ -86,6 +86,31 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         });
         refreshIntervalGroup.add(refreshGroupEntry);
 
+        // Group for Custom Icon
+        const iconGroup = new Adw.PreferencesGroup({
+            title: _('Custom Icon'),
+            description: _('Configure a custom icon for the extension'),
+        });
+        page.add(iconGroup);
+
+        const customIconEntry = new Adw.EntryRow({
+            title: _('Custom Icon Path'),
+            showApplyButton: true,
+            inputPurpose: Gtk.InputPurpose.FREE_FORM,
+            inputHints: Gtk.InputHints.WORD_COMPLETION,
+            child: new Gtk.Entry({
+                placeholder_text: _('Enter a theme icon name or path to an icon file'),
+            })
+        });
+        iconGroup.add(customIconEntry);
+
+        const iconInfoRow = new Adw.ActionRow({
+            title: _('Icon Info'),
+            subtitle: _('You can specify either a theme icon name (e.g., "code-symbolic") or a full path to an image file'),
+            activatable: false,
+        });
+        iconGroup.add(iconInfoRow);
+
         // Add new group for Cleanup Settings at end of fillPreferencesWindow
 
         const cleanupGroup = new Adw.PreferencesGroup({
@@ -107,7 +132,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
             child: new Gtk.Entry({
-                placeholder_text: _('Comma separated list of workspace directories to not fail'),
+                placeholder_text: _('Comma separated list of workspace directories to ignore from cleanup'),
             })
         });
         cleanupGroup.add(nofailEntry);
@@ -166,6 +191,14 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         _settings.bind(
             'nofail-workspaces',
             nofailEntry,
+            'text',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+
+        // Bind custom icon setting
+        _settings.bind(
+            'custom-icon',
+            customIconEntry,
             'text',
             Gio.SettingsBindFlags.DEFAULT
         );
