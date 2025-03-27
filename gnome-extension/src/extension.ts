@@ -268,6 +268,15 @@ export default class VSCodeWorkspacesExtension extends Extension {
     private _setActiveEditor() {
         const editorLocation = this._editorLocation;
 
+        const alternativePaths = [
+            GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']),
+            GLib.build_filenamev([this._userConfigDir, 'cursor/User/workspaceStorage']),
+            GLib.build_filenamev([this._userConfigDir, 'Code/User/workspaceStorage']),
+            GLib.build_filenamev([this._userConfigDir, 'code/User/workspaceStorage']),
+            GLib.build_filenamev([this._userConfigDir, 'VSCodium/User/workspaceStorage']),
+            GLib.build_filenamev([this._userConfigDir, 'vscodium/User/workspaceStorage'])
+        ];
+
         if (editorLocation === 'auto') {
             // Auto selection - use default editor or first available
             this._activeEditor = this._foundEditors.find(editor => editor.isDefault) ?? this._foundEditors[0];
@@ -282,17 +291,20 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 // Determine a reasonable name for the custom editor
                 const customName = GLib.path_get_basename(editorLocation);
 
+                // Get lowercase version for case-insensitive comparisons
+                const lowerCustomName = customName.toLowerCase();
+
                 // Try to guess a workspacePath based on common patterns
                 let customWorkspacePath = '';
 
-                // Check if it might be a custom installation of known editors
-                if (customName.includes('code') || customName.includes('codium')) {
+                // Check if it might be a custom installation of known editors (case-insensitive)
+                if (lowerCustomName.includes('code') || lowerCustomName.includes('codium')) {
                     // Assume the storage path follows the standard pattern but in a custom location
-                    if (customName.includes('insiders')) {
+                    if (lowerCustomName.includes('insiders')) {
                         customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']);
-                    } else if (customName.includes('codium')) {
+                    } else if (lowerCustomName.includes('codium')) {
                         customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'VSCodium/User/workspaceStorage']);
-                    } else if (customName.includes('cursor')) {
+                    } else if (lowerCustomName.includes('cursor')) {
                         customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']);
                     } else {
                         customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code/User/workspaceStorage']);
@@ -315,7 +327,21 @@ export default class VSCodeWorkspacesExtension extends Extension {
                     this._log(`Found workspace directory for custom editor: ${customEditor.workspacePath}`);
                 } else {
                     this._log(`Workspace directory not found for custom editor: ${customEditor.workspacePath}`);
-                    this._log(`Please create the directory or adjust your settings.`);
+
+                    // Check each alternative path
+                    for (const altPath of alternativePaths) {
+                        const altDir = Gio.File.new_for_path(altPath);
+                        if (altDir.query_exists(null)) {
+                            this._log(`Found alternative workspace directory: ${altPath}`);
+                            customEditor.workspacePath = altPath;
+                            break;
+                        }
+                    }
+
+                    // If we still didn't find a path, log a warning
+                    if (!Gio.File.new_for_path(customEditor.workspacePath).query_exists(null)) {
+                        this._log(`No alternative workspace paths found. Please create the directory or adjust your settings.`);
+                    }
                 }
 
                 // Use the custom editor regardless of whether workspace directory exists
@@ -334,17 +360,20 @@ export default class VSCodeWorkspacesExtension extends Extension {
                 if (!this._activeEditor && editorLocation !== '') {
                     this._log(`No predefined editor found for binary '${editorLocation}', creating custom editor entry`);
 
+                    // Get lowercase version for case-insensitive comparison
+                    const lowerEditorLocation = editorLocation.toLowerCase();
+
                     // Try to guess a workspacePath based on common patterns
                     let customWorkspacePath = '';
 
-                    // Check if it might be a known editor with a different binary name
-                    if (editorLocation.includes('code') || editorLocation.includes('codium')) {
+                    // Check if it might be a known editor with a different binary name (case-insensitive)
+                    if (lowerEditorLocation.includes('code') || lowerEditorLocation.includes('codium')) {
                         // Assume the storage path follows the standard pattern
-                        if (editorLocation.includes('insiders')) {
+                        if (lowerEditorLocation.includes('insiders')) {
                             customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code - Insiders/User/workspaceStorage']);
-                        } else if (editorLocation.includes('codium')) {
+                        } else if (lowerEditorLocation.includes('codium')) {
                             customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'VSCodium/User/workspaceStorage']);
-                        } else if (editorLocation.includes('cursor')) {
+                        } else if (lowerEditorLocation.includes('cursor')) {
                             customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Cursor/User/workspaceStorage']);
                         } else {
                             customWorkspacePath = GLib.build_filenamev([this._userConfigDir, 'Code/User/workspaceStorage']);
@@ -369,9 +398,24 @@ export default class VSCodeWorkspacesExtension extends Extension {
                         this._activeEditor = customEditor;
                     } else {
                         this._log(`Workspace directory not found for custom editor: ${customEditor.workspacePath}`);
-                        this._log(`Please create the directory or adjust your settings.`);
+
+                        // Check each alternative path
+                        for (const altPath of alternativePaths) {
+                            const altDir = Gio.File.new_for_path(altPath);
+                            if (altDir.query_exists(null)) {
+                                this._log(`Found alternative workspace directory: ${altPath}`);
+                                customEditor.workspacePath = altPath;
+                                this._foundEditors.push(customEditor);
+                                this._activeEditor = customEditor;
+                                break;
+                            }
+                        }
+
                         // Still use the custom editor even if workspace path doesn't exist yet
-                        this._activeEditor = customEditor;
+                        if (!this._activeEditor) {
+                            this._log(`No alternative workspace paths found. Using custom editor anyway.`);
+                            this._activeEditor = customEditor;
+                        }
                     }
                 }
 
@@ -384,6 +428,7 @@ export default class VSCodeWorkspacesExtension extends Extension {
 
         if (this._activeEditor) {
             this._log(`Active editor set to: ${this._activeEditor.name} (${this._activeEditor.binary})`);
+            this._log(`Using workspace storage path: ${this._activeEditor.workspacePath}`);
         } else {
             this._log('No editor found!');
         }

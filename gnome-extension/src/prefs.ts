@@ -48,7 +48,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
 
         // Group for editor Location
         const editorGroup = new Adw.PreferencesGroup({
-            title: _('editor Settings'),
+            title: _('Editor Settings'),
             description: _('Configure various settings for interacting with editor'),
         });
 
@@ -58,13 +58,12 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         });
 
         const editorLocationHintRow = new Adw.ActionRow({
-            title: _('editor Location Hint'),
+            title: _('Editor Location'),
             subtitle: _('Use "auto", a binary name (e.g., "code", "cursor"), or a full path'),
             activatable: false,
         });
 
         const editorLocation = new Adw.EntryRow({
-            title: _('editor Location'),
             showApplyButton: true,
             inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
@@ -161,7 +160,7 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
             inputPurpose: Gtk.InputPurpose.FREE_FORM,
             inputHints: Gtk.InputHints.WORD_COMPLETION,
             child: new Gtk.Entry({
-                placeholder_text: _('Comma separated list of workspace directories to ignore from cleanup'),
+                placeholder_text: _('Comma separated list of workspace directories to ignore for cleanup'),
             })
         });
         cleanupGroup.add(nofailEntry);
@@ -319,39 +318,6 @@ export default class VSCodeWorkspacesPreferences extends ExtensionPreferences {
         // Show the window
         // Add the page to the window
         window.add(page);
-
-        // Create a save button to explicitly save settings
-        const headerbar = window.get_titlebar();
-        if (headerbar instanceof Adw.HeaderBar) {
-            const saveButton = new Gtk.Button({
-                label: _('Save'),
-                css_classes: ['suggested-action', 'pill', 'text-button'],
-                margin_top: 8,
-                margin_bottom: 8,
-                margin_end: 8,
-                valign: Gtk.Align.CENTER,
-                visible: true,
-            });
-
-            saveButton.connect('clicked', () => {
-                this._saveSettings(_settings, settingsChanged);
-                settingsChanged.clear(); // Clear the changes after saving
-
-                // Add feedback to indicate saved state
-                const originalLabel = saveButton.get_label() || _('Save');
-                saveButton.set_label(_('Saved!'));
-                // Reset label after a short delay
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-                    saveButton.set_label(originalLabel);
-                    return GLib.SOURCE_REMOVE;
-                });
-            });
-
-            headerbar.pack_end(saveButton);
-
-            // Force redraw to ensure button is visible
-            headerbar.queue_resize();
-        }
 
         // Ensure settings are saved when the window is closed
         window.connect('close-request', () => {
