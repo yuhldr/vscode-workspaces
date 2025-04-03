@@ -1,35 +1,26 @@
 import { Extension, ExtensionMetadata } from 'resource:///org/gnome/shell/extensions/extension.js';
 import { VSCodeWorkspacesCore } from './core.js';
+import Gio from 'gi://Gio';
 
 export default class VSCodeWorkspacesExtension extends Extension {
-    private core: VSCodeWorkspacesCore;
+    metadata: ExtensionMetadata;
+    private core: VSCodeWorkspacesCore | null = null;
     constructor(metadata: ExtensionMetadata) {
         super(metadata);
-        let gsettings = this.getSettings();
-        this.core = new VSCodeWorkspacesCore(metadata, () => this.openPreferences(), gsettings);
+        this.metadata = metadata;
     }
 
     enable() {
         super.enable();
+        let gsettings: Gio.Settings = this.getSettings();
+        this.core = new VSCodeWorkspacesCore(this.metadata, this.openPreferences, gsettings);
         this.core.enable();
     }
 
     disable() {
         super.disable();
+        if (!this.core) return; 
         this.core.disable();
-    }
-
-    // Method to open preferences
-    openPreferences() {
-        try {
-            // Call the parent method which handles preferences opening in GNOME 45+
-            super.openPreferences();
-        } catch (e) {
-            console.error('Failed to open preferences', e);
-            // Log detailed error to help with debugging
-            console.error('Error details:', JSON.stringify(e));
-
-            // TODO: Show notification to user
-        }
+        this.core = null;
     }
 }
