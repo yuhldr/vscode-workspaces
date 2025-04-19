@@ -1,9 +1,10 @@
-from gi.repository import Nautilus, GObject, GLib
-import os
-import logging
-from urllib.parse import unquote
-from subprocess import call
 import json
+import logging
+import os
+from subprocess import call
+from urllib.parse import unquote
+
+from gi.repository import GLib, GObject, Nautilus
 
 # Configure logging
 logging.basicConfig(
@@ -92,25 +93,28 @@ class VSCodeWorkspacesExtension(GObject.GObject, Nautilus.MenuProvider):
         self.launch_vscode(menu, [workspace_path])
 
     def _get_name(self, workspace):
+        # Handle file:// paths
         if workspace.startswith("file://"):
-            return workspace.replace("file://", "").replace(GLib.get_home_dir(), "~")
+            path = workspace.replace("file://", "")
+            return path.replace(GLib.get_home_dir(), "~")
 
-        if workspace.startswith("vscode-remote://"):
-            workspace_name = workspace.replace("vscode-remote://", "")
-            if workspace_name.startswith("ssh-remote+"):
-                workspace_name = workspace_name.replace("ssh-remote+", "")
-                if "/" not in workspace_name:
-                    return None
-                wns = workspace_name.split("/")
-                if len(wns) < 2:
-                    return None
-                ssh_host = wns[0]
-                workspace_name = workspace_name.replace(ssh_host, "")
-                if len(wns) >= 4:
-                    workspace_name = "~/" + "/".join(wns[3:])
-                return f"[SHH: {ssh_host}] {workspace_name}"
+        # Early return for non-vscode-remote paths
+        if not workspace.startswith("vscode-remote://ssh-remote+"):
+            return workspace
 
-        return workspace
+        # Process SSH remote workspace path
+        parts = workspace[len("vscode-remote://ssh-remote+"):].split("/", 3)
+
+        # Validate path structure
+        if len(parts) < 2:
+            return None
+        ssh_host = parts[0]
+
+        # Construct workspace path
+        workspace_path = f"~/{parts[3]}" if len(
+            parts) >= 4 else "/".join(parts[1:])
+
+        return f"[SSH: {ssh_host}] {workspace_path}"
 
     def get_background_items(self, window):
         recent_workspaces = self._get_recent_workspaces()
